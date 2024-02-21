@@ -5,12 +5,16 @@ import (
 	"fmt"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
+	"github.com/xuri/excelize/v2"
 	"log"
 )
 
 const (
 	// PostgreSQL connection string
-	psqlInfo = "host=mioxxo-products.ce989v8mdple.us-east-1.rds.amazonaws.com port=5432 user=postgres dbname=products password=Yk9deWhjbYUUR5LEF8SnMf7w9jghPf sslmode=disable"
+	psqlInfo         = "host=mioxxo-products.ce989v8mdple.us-east-1.rds.amazonaws.com port=5432 user=postgres dbname=products password=Yk9deWhjbYUUR5LEF8SnMf7w9jghPf sslmode=disable"
+	lastModifiedById = "005Hp00000igHBGIA2"
+	recordTypeId     = "012Hp000001mPmEIAU"
+	createdDate      = "2021-08-25T20:00:00.000Z"
 )
 
 type Brand struct {
@@ -34,18 +38,21 @@ type Product struct {
 	Brand            sql.NullString `db:"brand"`
 	Categories       sql.NullString `db:"categories"`
 	Image            sql.NullString `db:"image"`
+	Tags             sql.NullString `db:"tags"`
 }
 
 func main() {
 	db := createDatabaseConnection()
-	readBrands(*db)
-	readCategories(*db)
+	var brands = readBrands(*db)
+	saveToExcelFile("brands.xlsx", brands)
+
+	//readCategories(*db)
 
 	defer db.Close()
 
-	db = createDatabaseConnection()
-	readProducts(*db)
-	defer db.Close()
+	//db = createDatabaseConnection()
+	//readProducts(*db)
+	//defer db.Close()
 }
 
 func createDatabaseConnection() *sqlx.DB {
@@ -91,7 +98,7 @@ func readCategories(db sqlx.DB) []Category {
 
 func readProducts(db sqlx.DB) []Product {
 	var products []Product
-	err := db.Select(&products, "SELECT sku, barcode, name, short_description, variant, brand, categories, image FROM mgo.products")
+	err := db.Select(&products, "SELECT sku, barcode, name, short_description, variant, brand, categories, image, tags FROM mgo.products")
 	if err != nil {
 		log.Fatalf("Could not read products: %v", err)
 	}
@@ -101,4 +108,45 @@ func readProducts(db sqlx.DB) []Product {
 	}
 	return products
 
+}
+
+func saveToExcelFile(filename string, brands []Brand) {
+	sheetName := "Sheet1"
+	file := excelize.NewFile()
+	index, err := file.NewSheet(sheetName)
+	if err != nil {
+		log.Fatalf("Could not create sheet: %v", err)
+	}
+	file.SetActiveSheet(index)
+	// Set the headers
+	headers := []string{"_", "Id", "OwnerId", "IsDeleted", "Name", "CurrencyIsoCode", "RecordTypeId", "CreatedDate", "CreatedById", "LastModifiedDate", "LastModifiedById", "SystemModstamp", "LastActivityDate", "LastViewedDate", "LastReferencedDate", "Brand_Owner__c", "Type__c"}
+	for i, header := range headers {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		file.SetCellValue(sheetName, cell, header)
+	}
+
+	for i, brand := range brands {
+		row := i + 2
+		setCellValue(file, sheetName, row, 1, "[Brand__c]")
+		setCellValue(file, sheetName, row, 2, brand.ID)
+		setCellValue(file, sheetName, row, 3, "005Hp00000igHBGIA2")
+		setCellValue(file, sheetName, row, 4, "FALSE")
+		setCellValue(file, sheetName, row, 5, brand.Name.String)
+		setCellValue(file, sheetName, row, 6, "MXN")
+		setCellValue(file, sheetName, row, 7, recordTypeId)
+		setCellValue(file, sheetName, row, 8, createdDate)
+		setCellValue(file, sheetName, row, 9, lastModifiedById)
+		setCellValue(file, sheetName, row, 10, createdDate)
+		setCellValue(file, sheetName, row, 11, lastModifiedById)
+		setCellValue(file, sheetName, row, 12, createdDate)
+		setCellValue(file, sheetName, row, 16, "Brand")
+	}
+	if err := file.SaveAs(filename); err != nil {
+		fmt.Println(err)
+	}
+}
+
+func setCellValue(file *excelize.File, sheetName string, row int, column int, value string) {
+	cell, _ := excelize.CoordinatesToCellName(column, row)
+	file.SetCellValue(sheetName, cell, value)
 }
