@@ -19,12 +19,12 @@ type Hub struct {
 }
 
 type ResponseData struct {
-	hubById struct {
-		id                      string `json:"id"`
-		dakiPlusHubId           string `json:"dakiPlusHubId"`
-		fulfillmentHubIdForPlus string `json:"fulfillmentHubIdForPlus"`
-		state                   string `json:"state"`
-		timeZone                string `json:"timeZone"`
+	HubById struct {
+		Id                      string `json:"id"`
+		DakiPlusHubId           string `json:"dakiPlusHubId"`
+		FulfillmentHubIdForPlus string `json:"fulfillmentHubIdForPlus"`
+		State                   string `json:"state"`
+		TimeZone                string `json:"timeZone"`
 	} `json:"hubById"`
 }
 
@@ -58,7 +58,7 @@ func main() {
 			timeZone
 		}
 	}
-`)
+	`)
 
 	request.Var("id", "50645")
 
@@ -73,5 +73,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("%+v", respData)
+	fmt.Printf("%+v\n", respData)
+	fmt.Println(respData)
 }
