@@ -2,4 +2,4 @@
 .vscode
 .idea
 .__debug_bin
-.xlsx
+*.xlsx
