@@ -2,23 +2,27 @@ package main
 
 import (
 	"database/sql"
+	"encoding/csv"
 	"fmt"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	"github.com/xuri/excelize/v2"
 	"log"
+	"os"
 	"strings"
 )
 
 const (
 	// PostgreSQL connection string
-	psqlInfo         = "host=mioxxo-products.ce989v8mdple.us-east-1.rds.amazonaws.com port=5432 user=postgres dbname=products password=Yk9deWhjbYUUR5LEF8SnMf7w9jghPf sslmode=disable"
-	ownerId          = "005Hp00000igpOJIAY"
-	lastModifiedById = "005Hp00000igHBGIA2"
-	jokrEntity       = "001Hp00002kvRgtIAE"
-	taxRateId        = "a0dHp00003rSHNVIA4"
-	createdDate      = "2021-08-25T20:00:00.000Z"
-	sheetName        = "Sheet1"
+	psqlInfo             = "host=mioxxo-products.ce989v8mdple.us-east-1.rds.amazonaws.com port=5432 user=postgres dbname=products password=Yk9deWhjbYUUR5LEF8SnMf7w9jghPf sslmode=disable"
+	recordTypeBrandOwner = "012Hp000001mPmGIAU"
+	recordTypeBrand      = "012Hp000001mPmEIAU"
+	ownerId              = "005Hp00000igpOJIAY"
+	lastModifiedById     = "005Hp00000igHBGIA2"
+	jokrEntity           = "001Hp00002kvRgtIAE"
+	taxRateId            = "a0dHp00003rSHNVIA4"
+	createdDate          = "2021-08-25T20:00:00.000Z"
+	sheetName            = "Sheet1"
 )
 
 var brandsMap = make(map[string]Brand)
@@ -27,6 +31,12 @@ type Brand struct {
 	ID    string         `db:"_id"`
 	Name  sql.NullString `db:"name"`
 	Image sql.NullString `db:"image"`
+}
+
+type SalesForceEntity struct {
+	ID              string
+	Name            string
+	ReferenceTypeId string
 }
 
 type Category struct {
@@ -51,7 +61,17 @@ type Product struct {
 func main() {
 	db := createDatabaseConnection()
 	var brands = readBrands(*db)
-	saveBrandsToExcelFile("brands.xlsx", brands)
+	//saveBrandOwnersToCsvFile("brandowners.csv", brands)
+
+	// TODO import data to the Salesforce here
+	// TODO export Brands csv file from Salesforce
+
+	brandOwners := readSalesforceEntities("brandExported.csv", recordTypeBrandOwner)
+	for key, value := range brandOwners {
+		fmt.Printf("Key '%s' Brand owner %+v\n", key, value)
+	}
+
+	saveBrandsToCsvFile("brands.csv", brands, brandOwners)
 
 	//var categories = readCategories(*db)
 	//saveCategoriesToExcelFile("categories.xlsx", categories)
@@ -128,41 +148,132 @@ func readBrand(db sqlx.DB, brandId string) Brand {
 	return brand[0]
 }
 
-func saveBrandsToExcelFile(filename string, brands []Brand) {
-	file := excelize.NewFile()
-	index, err := file.NewSheet(sheetName)
+func readSalesforceEntities(filename string, recordTypeId string) map[string]SalesForceEntity {
+	file, err := os.Open(filename)
 	if err != nil {
-		log.Fatalf("Could not create sheet: %v", err)
+		log.Fatalf("Could not open file: %v", err)
 	}
-	file.SetActiveSheet(index)
-	// Set the headers
-	headers := []string{"_", "Id", "OwnerId", "IsDeleted", "Name", "CurrencyIsoCode", "RecordTypeId", "CreatedDate", "CreatedById", "LastModifiedDate", "LastModifiedById", "SystemModstamp", "LastActivityDate", "LastViewedDate", "LastReferencedDate",
-		"Brand_Owner__c", "Type__c"}
-	for i, header := range headers {
-		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
-		file.SetCellValue(sheetName, cell, header)
+	defer file.Close()
+	reader := csv.NewReader(file)
+	reader.FieldsPerRecord = -1 // Allow variable number of fields
+	data, err := reader.ReadAll()
+	if err != nil {
+		panic(err)
 	}
 
-	for i, brand := range brands {
-		row := i + 2
-		setCellValue(file, sheetName, row, 1, "[Brand__c]")
-		setCellValue(file, sheetName, row, 2, brand.ID)
-		setCellValue(file, sheetName, row, 3, ownerId)
-		setCellValue(file, sheetName, row, 4, "FALSE")
-		setCellValue(file, sheetName, row, 5, brand.Name.String)
-		setCellValue(file, sheetName, row, 6, "MXN")
-		setCellValue(file, sheetName, row, 7, "012Hp000001mPmEIAU")
-		//setCellValue(file, sheetName, row, 8, createdDate)
-		//setCellValue(file, sheetName, row, 9, lastModifiedById)
-		//setCellValue(file, sheetName, row, 10, createdDate)
-		//setCellValue(file, sheetName, row, 11, lastModifiedById)
-		//setCellValue(file, sheetName, row, 12, createdDate)
-		setCellValue(file, sheetName, row, 16, "a0FHp00000uorcKMAQ")
-		setCellValue(file, sheetName, row, 17, "Brand")
+	var nameColumn int
+	var idColumn int
+	var referenceTypeIColumn int
+
+	result := make(map[string]SalesForceEntity)
+
+	// Print the CSV data
+	for i, row := range data {
+
+		if i == 0 {
+			for u, header := range row {
+				if header == "NAME" {
+					nameColumn = u
+				}
+				if header == "ID" {
+					idColumn = u
+				}
+				if header == "RECORDTYPEID" {
+					referenceTypeIColumn = u
+				}
+			}
+
+			fmt.Printf("Name column index %v\n", nameColumn)
+			fmt.Printf("ID column index %v\n", idColumn)
+			fmt.Printf("Reference type id column index %v\n", referenceTypeIColumn)
+
+		} else {
+			if row[referenceTypeIColumn] == recordTypeId {
+				result[row[nameColumn]] = SalesForceEntity{
+					ID:              row[idColumn],
+					Name:            row[nameColumn],
+					ReferenceTypeId: row[referenceTypeIColumn],
+				}
+			}
+		}
 	}
-	if err := file.SaveAs(filename); err != nil {
-		fmt.Println(err)
+
+	return result
+}
+
+func saveBrandOwnersToCsvFile(filename string, brands []Brand) {
+	file, err := os.Create(filename)
+	if err != nil {
+		log.Fatalf("Could not create file: %v", err)
 	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// Set the headers
+	headers := []string{"Name", "RecordTypeId"}
+	writer.Write(headers)
+
+	for _, brand := range brands {
+		dataRow := make([]string, len(headers))
+		dataRow[0] = brand.Name.String
+		dataRow[1] = recordTypeBrandOwner
+		//dataRow[2] = "Brand Owner"
+		writer.Write(dataRow)
+	}
+}
+
+func saveBrandsToCsvFile(filename string, brands []Brand, brandOwners map[string]SalesForceEntity) {
+
+	file, err := os.Create(filename)
+	if err != nil {
+		log.Fatalf("Could not create file: %v", err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// Set the headers
+	headers := []string{"Name", "RecordTypeId", "Brand_Owner__c"}
+	writer.Write(headers)
+
+	for _, brand := range brands {
+		dataRow := make([]string, len(headers))
+		dataRow[0] = brand.Name.String
+		dataRow[1] = recordTypeBrand
+		dataRow[2] = brandOwners[brand.Name.String].ID
+		writer.Write(dataRow)
+	}
+
+	//file, err := os.Create(filename)
+	//if err != nil {
+	//	log.Fatalf("Could not create file: %v", err)
+	//}
+	//defer file.Close()
+	//
+	//writer := csv.NewWriter(file)
+	//defer writer.Flush()
+	//
+	//// Set the headers
+	//headers := []string{"_", "Id", "OwnerId", "IsDeleted", "Name", "CurrencyIsoCode", "RecordTypeId", "CreatedDate", "CreatedById", "LastModifiedDate", "LastModifiedById", "SystemModstamp", "LastActivityDate", "LastViewedDate", "LastReferencedDate",
+	//	"Brand_Owner__c", "Type__c"}
+	//writer.Write(headers)
+	//
+	//for _, brand := range brands {
+	//	dataRow := make([]string, len(headers))
+	//	dataRow[0] = "[Brand__c]"
+	//	dataRow[1] = brand.ID
+	//	dataRow[2] = ownerId
+	//	dataRow[3] = "FALSE"
+	//	dataRow[4] = brand.Name.String
+	//	dataRow[5] = "MXN"
+	//	dataRow[6] = "012Hp000001mPmEIAU"
+	//	dataRow[15] = "a0FHp00000uorcKMAQ"
+	//	dataRow[16] = "Brand"
+	//	writer.Write(dataRow)
+	//}
 }
 
 func saveCategoriesToExcelFile(filename string, categories []Category) {
