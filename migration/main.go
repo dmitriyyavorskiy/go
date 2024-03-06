@@ -40,9 +40,11 @@ type SalesForceEntity struct {
 }
 
 type Category struct {
-	ID    string         `db:"_id"`
-	Name  sql.NullString `db:"name"`
-	Image sql.NullString `db:"image"`
+	ID           string         `db:"id"`
+	Name         sql.NullString `db:"name"`
+	Image        sql.NullString `db:"image"`
+	CategoryId   sql.NullString `db:"subcategory_id"`
+	CategoryName sql.NullString `db:"subcategory_name"`
 }
 
 type Product struct {
@@ -59,25 +61,25 @@ type Product struct {
 }
 
 func main() {
-	db := createDatabaseConnection()
-	var brands = readBrands(*db)
+	//db := createDatabaseConnection()
+	//var brands = readBrands(*db)
 	//saveBrandOwnersToCsvFile("brandowners.csv", brands)
-
-	// TODO import data to the Salesforce here
-	// TODO export Brands csv file from Salesforce
-
-	brandOwners := readSalesforceEntities("brandExported.csv", recordTypeBrandOwner)
-	for key, value := range brandOwners {
-		fmt.Printf("Key '%s' Brand owner %+v\n", key, value)
-	}
-
-	saveBrandsToCsvFile("brands.csv", brands, brandOwners)
-
-	//var categories = readCategories(*db)
-	//saveCategoriesToExcelFile("categories.xlsx", categories)
 	//
-	//defer db.Close()
+	//// TODO import data to the Salesforce here
+	//// TODO export Brands csv file from Salesforce
 	//
+	//brandOwners := readSalesforceEntities("brandExported.csv", recordTypeBrandOwner)
+	//for key, value := range brandOwners {
+	//	fmt.Printf("Key '%s' Brand owner %+v\n", key, value)
+	//}
+	//
+	//saveBrandsToCsvFile("brands.csv", brands, brandOwners)
+
+	db := createDatabaseConnection()
+	var categories = readCategories(*db)
+	saveCategoriesToCsvFile("categories.csv", categories)
+	defer db.Close()
+
 	//db = createDatabaseConnection()
 	//var products = readProducts(*db)
 	//saveProductsToExcelFile("products.xlsx", products)
@@ -115,7 +117,11 @@ func readBrands(db sqlx.DB) []Brand {
 
 func readCategories(db sqlx.DB) []Category {
 	var categories []Category
-	err := db.Select(&categories, "SELECT _id, name, image FROM mgo.categories")
+	err := db.Select(&categories,
+		`select distinct c._id as id, c.name as name, c.image as image, s._id as subcategory_id, s.name as subcategory_name from mgo.categories c 
+    join mgo.categories_subcategories cs on c._id=cs.categories_Id 
+    join mgo.subcategories s on cs.sub_categories_id = s._id 
+	order by c._id,s._id asc`)
 	if err != nil {
 		log.Fatalf("Could not read categories: %v", err)
 	}
@@ -246,34 +252,30 @@ func saveBrandsToCsvFile(filename string, brands []Brand, brandOwners map[string
 		dataRow[2] = brandOwners[brand.Name.String].ID
 		writer.Write(dataRow)
 	}
+}
 
-	//file, err := os.Create(filename)
-	//if err != nil {
-	//	log.Fatalf("Could not create file: %v", err)
-	//}
-	//defer file.Close()
-	//
-	//writer := csv.NewWriter(file)
-	//defer writer.Flush()
-	//
-	//// Set the headers
-	//headers := []string{"_", "Id", "OwnerId", "IsDeleted", "Name", "CurrencyIsoCode", "RecordTypeId", "CreatedDate", "CreatedById", "LastModifiedDate", "LastModifiedById", "SystemModstamp", "LastActivityDate", "LastViewedDate", "LastReferencedDate",
-	//	"Brand_Owner__c", "Type__c"}
-	//writer.Write(headers)
-	//
-	//for _, brand := range brands {
-	//	dataRow := make([]string, len(headers))
-	//	dataRow[0] = "[Brand__c]"
-	//	dataRow[1] = brand.ID
-	//	dataRow[2] = ownerId
-	//	dataRow[3] = "FALSE"
-	//	dataRow[4] = brand.Name.String
-	//	dataRow[5] = "MXN"
-	//	dataRow[6] = "012Hp000001mPmEIAU"
-	//	dataRow[15] = "a0FHp00000uorcKMAQ"
-	//	dataRow[16] = "Brand"
-	//	writer.Write(dataRow)
-	//}
+func saveCategoriesToCsvFile(filename string, categories []Category) {
+	file, err := os.Create(filename)
+	if err != nil {
+		log.Fatalf("Could not create file: %v", err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// Set the headers
+	headers := []string{"Name", "Category_Group__c", "Category_Level_1__c", "Category_Level_2__c"}
+	writer.Write(headers)
+
+	for _, category := range categories {
+		dataRow := make([]string, len(headers))
+		dataRow[0] = "Oxxo: " + category.Name.String
+		dataRow[1] = "Oxxo: " + category.Name.String
+		dataRow[2] = category.Name.String
+		dataRow[3] = category.CategoryName.String
+		writer.Write(dataRow)
+	}
 }
 
 func saveCategoriesToExcelFile(filename string, categories []Category) {
