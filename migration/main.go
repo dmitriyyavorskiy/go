@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
@@ -39,12 +40,25 @@ type SalesForceEntity struct {
 	ReferenceTypeId string
 }
 
+type SalesForceCategory struct {
+	ID                 string
+	Name               string
+	CategoryLevel1Name string
+	CategoryLevel2Name string
+}
+
 type Category struct {
 	ID           string         `db:"id"`
 	Name         sql.NullString `db:"name"`
 	Image        sql.NullString `db:"image"`
 	CategoryId   sql.NullString `db:"subcategory_id"`
 	CategoryName sql.NullString `db:"subcategory_name"`
+}
+
+type Tax struct {
+	Rate        int    `json:"rate"`
+	Type        string `json:"type"`
+	Withholding bool   `json:"withholding"`
 }
 
 type Product struct {
@@ -57,14 +71,16 @@ type Product struct {
 	Categories       sql.NullString `db:"categories"`
 	Image            sql.NullString `db:"image"`
 	Tags             sql.NullString `db:"tags"`
+	Taxes            sql.NullString `db:"taxes"`
 	Enabled          bool           `db:"is_enabled"`
 }
 
 func main() {
 	//db := createDatabaseConnection()
 	//var brands = readBrands(*db)
+	//defer db.Close()
 	//saveBrandOwnersToCsvFile("brandowners.csv", brands)
-	//
+
 	//// TODO import data to the Salesforce here
 	//// TODO export Brands csv file from Salesforce
 	//
@@ -75,15 +91,44 @@ func main() {
 	//
 	//saveBrandsToCsvFile("brands.csv", brands, brandOwners)
 
-	db := createDatabaseConnection()
-	var categories = readCategories(*db)
-	saveCategoriesToCsvFile("categories.csv", categories)
-	defer db.Close()
-
-	//db = createDatabaseConnection()
-	//var products = readProducts(*db)
-	//saveProductsToExcelFile("products.xlsx", products)
+	//db := createDatabaseConnection()
+	//var categories = readCategories(*db)
+	//saveCategoriesToCsvFile("categories.csv", categories)
 	//defer db.Close()
+
+	//// TODO import data to the Salesforce here
+	//// TODO export Categories csv file from Salesforce
+
+	db := createDatabaseConnection()
+	var products = readProducts(*db)
+	defer db.Close()
+	for _, value := range products {
+		fmt.Printf("Product %+v \n", value)
+	}
+
+	hubs := readSalesforceEntities("hubExported.csv", "")
+	for key, value := range hubs {
+		fmt.Printf("Key '%s' Hub %+v\n", key, value)
+	}
+
+	categories := readSalesforceCategories("categoryExported.csv")
+	for key, value := range categories {
+		if strings.Contains(value.Name, "Oxxo: ") {
+			fmt.Printf("Key '%s' Category %+v\n", key, value)
+		}
+	}
+
+	brands := readSalesforceEntities("brandExported.csv", recordTypeBrand)
+	for key, value := range brands {
+		fmt.Printf("Key '%s' Brand %+v\n", key, value)
+	}
+
+	taxRates := readSalesforceEntities("taxRateExported.csv", "")
+	for key, value := range taxRates {
+		fmt.Printf("Key '%s' Tax Rate %+v\n", key, value)
+	}
+
+	saveProductsToCsvFile("products.csv", products, taxRates, brands, categories, hubs)
 }
 
 func createDatabaseConnection() *sqlx.DB {
@@ -134,13 +179,9 @@ func readCategories(db sqlx.DB) []Category {
 
 func readProducts(db sqlx.DB) []Product {
 	var products []Product
-	err := db.Select(&products, "SELECT sku, barcode, name, short_description, variant, brand, categories, image, tags, is_enabled FROM mgo.products")
+	err := db.Select(&products, "SELECT sku, barcode, name, short_description, variant, brand, categories, image, tags, taxes, is_enabled FROM mgo.products limit 10")
 	if err != nil {
 		log.Fatalf("Could not read products: %v", err)
-	}
-
-	for _, product := range products {
-		fmt.Printf("Product %+v\n", product)
 	}
 	return products
 }
@@ -155,21 +196,11 @@ func readBrand(db sqlx.DB, brandId string) Brand {
 }
 
 func readSalesforceEntities(filename string, recordTypeId string) map[string]SalesForceEntity {
-	file, err := os.Open(filename)
-	if err != nil {
-		log.Fatalf("Could not open file: %v", err)
-	}
-	defer file.Close()
-	reader := csv.NewReader(file)
-	reader.FieldsPerRecord = -1 // Allow variable number of fields
-	data, err := reader.ReadAll()
-	if err != nil {
-		panic(err)
-	}
+	data := getDataFromFile(filename)
 
 	var nameColumn int
 	var idColumn int
-	var referenceTypeIColumn int
+	var referenceTypeIColumn = -1
 
 	result := make(map[string]SalesForceEntity)
 
@@ -194,7 +225,12 @@ func readSalesforceEntities(filename string, recordTypeId string) map[string]Sal
 			fmt.Printf("Reference type id column index %v\n", referenceTypeIColumn)
 
 		} else {
-			if row[referenceTypeIColumn] == recordTypeId {
+			if recordTypeId == "" {
+				result[row[nameColumn]] = SalesForceEntity{
+					ID:   row[idColumn],
+					Name: row[nameColumn],
+				}
+			} else if row[referenceTypeIColumn] == recordTypeId {
 				result[row[nameColumn]] = SalesForceEntity{
 					ID:              row[idColumn],
 					Name:            row[nameColumn],
@@ -203,8 +239,62 @@ func readSalesforceEntities(filename string, recordTypeId string) map[string]Sal
 			}
 		}
 	}
-
 	return result
+}
+
+func readSalesforceCategories(filename string) map[string]SalesForceCategory {
+	data := getDataFromFile(filename)
+
+	nameColumn := 2
+	var idColumn int
+	var categoryLevel1Column int
+	var categoryLevel2Column int
+
+	result := make(map[string]SalesForceCategory)
+
+	for i, row := range data {
+
+		if i == 0 {
+			for u, header := range row {
+				if header == "CATEGORY_GROUP__C" {
+					nameColumn = u
+				}
+				if header == "ID" {
+					idColumn = u
+				}
+				if header == "CATEGORY_LEVEL_1__C" {
+					categoryLevel1Column = u
+				}
+				if header == "CATEGORY_LEVEL_2__C" {
+					categoryLevel2Column = u
+				}
+			}
+
+		} else {
+			result[row[categoryLevel1Column]+":"+row[categoryLevel2Column]] = SalesForceCategory{
+				ID:                 row[idColumn],
+				Name:               row[nameColumn],
+				CategoryLevel1Name: row[categoryLevel1Column],
+				CategoryLevel2Name: row[categoryLevel2Column],
+			}
+		}
+	}
+	return result
+}
+
+func getDataFromFile(filename string) [][]string {
+	file, err := os.Open(filename)
+	if err != nil {
+		log.Fatalf("Could not open file: %v", err)
+	}
+	defer file.Close()
+	reader := csv.NewReader(file)
+	reader.FieldsPerRecord = -1 // Allow variable number of fields
+	data, err := reader.ReadAll()
+	if err != nil {
+		panic(err)
+	}
+	return data
 }
 
 func saveBrandOwnersToCsvFile(filename string, brands []Brand) {
@@ -278,41 +368,30 @@ func saveCategoriesToCsvFile(filename string, categories []Category) {
 	}
 }
 
-func saveCategoriesToExcelFile(filename string, categories []Category) {
-	file := excelize.NewFile()
-	index, err := file.NewSheet(sheetName)
+func saveProductsToCsvFile(filename string, products []Product, taxRates map[string]SalesForceEntity, brands map[string]SalesForceEntity, categories map[string]SalesForceCategory, hubs map[string]SalesForceEntity) {
+
+	fmt.Printf("There are %d products\n", len(products))
+
+	file, err := os.Create(filename)
 	if err != nil {
-		log.Fatalf("Could not create sheet: %v", err)
+		log.Fatalf("Could not create file: %v", err)
 	}
-	file.SetActiveSheet(index)
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
 	// Set the headers
-	headers := []string{"_", "Id", "OwnerId", "IsDeleted", "Name", "CurrencyIsoCode", "CreatedDate", "CreatedById", "LastModifiedDate", "LastModifiedById", "SystemModstamp", "LastActivityDate", "LastViewedDate", "LastReferencedDate",
-		"CS_Product_Object_Type__c", "Category_Group__c", "Category_Level_1__c", "Category_Level_2__c", "Category_Level_3__c", "Category_Level_4__c", "Category_Level_5__c", "Category_Level_6__c", "Global_Category_Group__c", "Global_Category_Level_1__c",
-		"Is_Supermarket__c", "JOKR_Entity__c"}
+	headers := []string{"Name", "Additional_Tax_Rate__c", "Age_Verification_Required__c", "Avalara_Tax_ID__c", "Barcode__c", "Brand__c", "Country_Default_Price__c", "Default_Tax_Rate__c", "Expiry_date_tracking_required__c",
+		"Global_Category_Tree__c", "Public_Image_URL__c", "SKU__c"}
+	writer.Write(headers)
 
-	for i, header := range headers {
-		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
-		file.SetCellValue(sheetName, cell, header)
-	}
-
-	for i, category := range categories {
-		row := i + 2
-		setCellValue(file, sheetName, row, 1, "[Global_Category_Tree__c]")
-		setCellValue(file, sheetName, row, 2, category.ID)
-		setCellValue(file, sheetName, row, 3, ownerId)
-		setCellValue(file, sheetName, row, 4, "FALSE")
-		//setCellValue(file, sheetName, row, 5, category.Name.String)
-		setCellValue(file, sheetName, row, 6, "MXN")
-		//setCellValue(file, sheetName, row, 7, createdDate)
-		//setCellValue(file, sheetName, row, 8, lastModifiedById)
-		//setCellValue(file, sheetName, row, 9, createdDate)
-		//setCellValue(file, sheetName, row, 10, lastModifiedById)
-		//setCellValue(file, sheetName, row, 11, createdDate)
-		setCellValue(file, sheetName, row, 16, category.Name.String)
-		setCellValue(file, sheetName, row, 25, "FALSE")
-	}
-	if err := file.SaveAs(filename); err != nil {
-		fmt.Println(err)
+	for _, product := range products {
+		dataRow := make([]string, len(headers))
+		dataRow[0] = product.Name
+		dataRow[1] = getFirstTaxSalesForceEntity(product, taxRates).ID
+		//dataRow[2] = brands[product.Name].ID
+		writer.Write(dataRow)
 	}
 }
 
@@ -460,4 +539,17 @@ func getFirstElement(input string) string {
 	}
 
 	return ""
+}
+
+func getFirstTaxSalesForceEntity(product Product, taxRates map[string]SalesForceEntity) SalesForceEntity {
+	var taxes []Tax
+	err := json.Unmarshal([]byte(product.Taxes.String), &taxes)
+	if err != nil {
+		log.Fatalf("Could not unmarshal taxes for product %+v: %v", product.Taxes, err)
+	}
+	key := fmt.Sprintf("%s%d", taxes[0].Type, taxes[0].Rate)
+
+	fmt.Printf("TaxRate %+v\n", taxRates[key])
+
+	return taxRates[key]
 }
