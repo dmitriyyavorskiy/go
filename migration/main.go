@@ -79,19 +79,22 @@ func main() {
 	//// TODO import data to the Salesforce here
 	//// TODO export Brands csv file from Salesforce
 	//
-	//brandOwners := readSalesforceEntities("brandExported.csv", recordTypeBrandOwner)
+	//brandOwners := readSalesforceEntities("migration/sandbox/brandExported.csv", recordTypeBrandOwner)
 	//for key, value := range brandOwners {
 	//	fmt.Printf("Key '%s' Brand owner %+v\n", key, value)
 	//}
 	//
 	//saveBrandsToCsvFile("brands.csv", brands, brandOwners)
 
+	//// TODO import data to the Salesforce here
+	//// TODO export Brands csv file from Salesforce
+
 	//var categoryTrees = readCategoryTrees()
 	//saveCategoriesToCsvFile("categories.csv", categoryTrees)
-	//
+
 	////// TODO import data to the Salesforce here
 	////// TODO export Categories csv file from Salesforce
-	//
+
 	db := createDatabaseConnection()
 	var products = readProducts(*db)
 	defer db.Close()
@@ -99,24 +102,24 @@ func main() {
 		fmt.Printf("Product %+v \n", value)
 	}
 
-	hubs := readSalesforceEntities("migration/production/hubExported.csv", "")
+	hubs := readSalesforceEntities("migration/sandbox/hubExported.csv", "")
 	for key, value := range hubs {
 		fmt.Printf("Key '%s' Hub %+v\n", key, value)
 	}
 
-	categories := readSalesforceCategories("migration/production/categoryExported.csv")
+	categories := readSalesforceCategories("migration/sandbox/categoryExported.csv")
 	for key, value := range categories {
 		if strings.Contains(value.Name, "Oxxo: ") {
 			fmt.Printf("Key '%s' CategoryTree %+v\n", key, value)
 		}
 	}
 
-	brands := readSalesforceEntities("migration/production/brandExported.csv", recordTypeBrand)
+	brands := readSalesforceEntities("migration/sandbox/brandExported.csv", recordTypeBrand)
 	for key, value := range brands {
 		fmt.Printf("Key '%s' Brand %+v\n", key, value)
 	}
 
-	taxRates := readSalesforceEntities("migration/production/taxRateExported.csv", "")
+	taxRates := readSalesforceEntities("migration/sandbox/taxRateExported.csv", "")
 	for key, value := range taxRates {
 		fmt.Printf("Key '%s' Tax Rate %+v\n", key, value)
 	}
