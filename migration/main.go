@@ -73,9 +73,7 @@ type Product struct {
 }
 
 func main() {
-	//db := createDatabaseConnection()
-	//var brands = readBrands(*db)
-	//defer db.Close()
+	//var brands = readBrands()
 	//saveBrandOwnersToCsvFile("brandowners.csv", brands)
 
 	//// TODO import data to the Salesforce here
@@ -88,14 +86,12 @@ func main() {
 	//
 	//saveBrandsToCsvFile("brands.csv", brands, brandOwners)
 
-	//db := createDatabaseConnection()
-	//var categories = readCategoryTrees(*db)
-	//saveCategoriesToCsvFile("categories.csv", categories)
-	//defer db.Close()
-
-	//// TODO import data to the Salesforce here
-	//// TODO export Categories csv file from Salesforce
-
+	//var categoryTrees = readCategoryTrees()
+	//saveCategoriesToCsvFile("categories.csv", categoryTrees)
+	//
+	////// TODO import data to the Salesforce here
+	////// TODO export Categories csv file from Salesforce
+	//
 	db := createDatabaseConnection()
 	var products = readProducts(*db)
 	defer db.Close()
@@ -143,12 +139,14 @@ func createDatabaseConnection() *sqlx.DB {
 	return db
 }
 
-func readBrands(db sqlx.DB) []Brand {
+func readBrands() []Brand {
+	db := createDatabaseConnection()
 	var brands []Brand
 	err := db.Select(&brands, "SELECT _id, name, image FROM mgo.brands")
 	if err != nil {
 		log.Fatalf("Could not read brands: %v", err)
 	}
+	defer db.Close()
 
 	for _, brand := range brands {
 		fmt.Printf("Brand %+v\n", brand)
@@ -157,13 +155,20 @@ func readBrands(db sqlx.DB) []Brand {
 	return brands
 }
 
-func readCategoryTrees(db sqlx.DB) []CategoryTree {
+func readCategoryTrees() []CategoryTree {
+	db := createDatabaseConnection()
 	var categories []CategoryTree
 	err := db.Select(&categories,
-		`select distinct c._id as id, c.name as name, c.image as image, s._id as subcategory_id, s.name as subcategory_name from mgo.categories c 
-    join mgo.categories_subcategories cs on c._id=cs.categories_Id 
-    join mgo.subcategories s on cs.sub_categories_id = s._id 
-	order by c._id,s._id asc`)
+		`select distinct c._id as id, c.name as name, s._id as subcategory_id, s.name as subcategory_name, c.image as image
+					from mgo.categories c
+         			join mgo.categories_subcategories cs on c._id = cs.categories_Id
+         			join mgo.subcategories s on cs.sub_categories_id = s._id
+				union all
+				select c._id as id, c.name as name, null as subcategory_id, null as subcategory_name, c.image as image
+					from mgo.categories c
+					order by id, subcategory_id asc;`)
+	defer db.Close()
+
 	if err != nil {
 		log.Fatalf("Could not read category trees: %v", err)
 	}
@@ -197,7 +202,7 @@ FROM mgo.products p
          JOIN mgo.categories c ON c._id = cat.category_id
          LEFT JOIN LATERAL unnest(p.categories) AS subcat(category_id) on true
          LEFT JOIN mgo.subcategories sc ON sc._id = subcat.category_id 
-order by p.sku, category_name, subcategory_name`)
+order by p.sku, category_name, subcategory_name limit 10`)
 	if err != nil {
 		log.Fatalf("Could not read products: %v", err)
 	}
@@ -378,12 +383,19 @@ func saveCategoriesToCsvFile(filename string, categories []CategoryTree) {
 
 	for _, category := range categories {
 		dataRow := make([]string, len(headers))
-		dataRow[0] = "Oxxo: " + category.Name.String
-		dataRow[1] = "Oxxo: " + category.Name.String
-		dataRow[2] = category.Name.String
-		dataRow[3] = category.CategoryName.String
+		dataRow[0] = "Oxxo: " + clearNameForExport(category.Name.String)
+		dataRow[1] = "Oxxo: " + clearNameForExport(category.Name.String)
+		dataRow[2] = clearNameForExport(category.Name.String)
+		dataRow[3] = clearNameForExport(category.CategoryName.String)
+
+		fmt.Printf("Writing category %+v\n from %+v\n", dataRow, category)
+
 		writer.Write(dataRow)
 	}
+}
+
+func clearNameForExport(s string) string {
+	return strings.ReplaceAll(s, ",", " &")
 }
 
 func saveProductsToCsvFile(filename string, products []Product, taxRates map[string]SalesForceEntity, brands map[string]SalesForceEntity, categories map[string]SalesForceCategory, hubs map[string]SalesForceEntity) {
@@ -401,7 +413,7 @@ func saveProductsToCsvFile(filename string, products []Product, taxRates map[str
 
 	// Set the headers
 	headers := []string{"Barcode__c", "SKU__c", "Name", "Brand__c", "Default_Tax_Rate__c", "Additional_Tax_Rate__c", "Global_Category_Tree__c", "Age_Verification_Required__c",
-		"Public_Image_URL__c", "Avalara_Tax_ID__c", "Country_Default_Price__c"}
+		"Public_Image_URL__c", "Country__c", "Avalara_Tax_ID__c", "Country_Default_Price__c"}
 	writer.Write(headers)
 
 	for _, product := range products {
@@ -419,6 +431,7 @@ func saveProductsToCsvFile(filename string, products []Product, taxRates map[str
 			dataRow[7] = "No"
 		}
 		dataRow[8] = product.Image.String
+		dataRow[9] = "Mexico" // Country__c
 		// dataRow[6] = "" // Avalara_Tax_ID__c
 		//dataRow[7] = "" // Country_Default_Price__c
 
@@ -473,6 +486,6 @@ func getTaxSalesForceEntity(product Product, taxRates map[string]SalesForceEntit
 }
 
 func getGlobalCategoryTree(product Product, categories map[string]SalesForceCategory) SalesForceCategory {
-	cetegoryTree := categories[product.CategoryName.String+":"+product.SubcategoryName.String]
+	cetegoryTree := categories[clearNameForExport(product.CategoryName.String)+":"+clearNameForExport(product.SubcategoryName.String)]
 	return cetegoryTree
 }
