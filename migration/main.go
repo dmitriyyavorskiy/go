@@ -17,6 +17,7 @@ const (
 	psqlInfo             = "host=mioxxo-products.ce989v8mdple.us-east-1.rds.amazonaws.com port=5432 user=postgres dbname=products password=Yk9deWhjbYUUR5LEF8SnMf7w9jghPf sslmode=disable"
 	recordTypeBrandOwner = "012Hp000001mPmGIAU"
 	recordTypeBrand      = "012Hp000001mPmEIAU"
+	jokrEntity           = "001Hp00002kvRgtIAE"
 )
 
 var brandsMap = make(map[string]Brand)
@@ -60,6 +61,8 @@ type Product struct {
 	Name             string         `db:"name"`
 	ShortDescription string         `db:"short_description"`
 	Variant          string         `db:"variant"`
+	MinPrice         string         `db:"min_price"`
+	MaxPrice         string         `db:"max_price"`
 	Brand            sql.NullString `db:"brand_name"`
 	Categories       sql.NullString `db:"categories"`
 	CategoryName     sql.NullString `db:"category_name"`
@@ -189,7 +192,9 @@ func readProducts(db sqlx.DB) []Product {
                            p.name,
                            p.short_description,
                            p.variant,
-                           b.name as brand_name,
+                           (select min(price_list) as min_price from mgo.products_inventory where sku = p.sku and zone is not null),
+                           (select max(price_list) as max_price from mgo.products_inventory where sku = p.sku and zone is not null),
+                           b.name  as brand_name,
                            p.categories,
                            c.name  as category_name,
                            sc.name as subcategory_name,
@@ -204,8 +209,8 @@ FROM mgo.products p
          LEFT JOIN LATERAL unnest(p.categories) AS cat(category_id) on true
          JOIN mgo.categories c ON c._id = cat.category_id
          LEFT JOIN LATERAL unnest(p.categories) AS subcat(category_id) on true
-         LEFT JOIN mgo.subcategories sc ON sc._id = subcat.category_id 
-order by p.sku, category_name, subcategory_name limit 10`)
+         LEFT JOIN mgo.subcategories sc ON sc._id = subcat.category_id
+order by p.sku, category_name, subcategory_name;`)
 	if err != nil {
 		log.Fatalf("Could not read products: %v", err)
 	}
@@ -415,8 +420,8 @@ func saveProductsToCsvFile(filename string, products []Product, taxRates map[str
 	defer writer.Flush()
 
 	// Set the headers
-	headers := []string{"Barcode__c", "SKU__c", "Name", "Brand__c", "Default_Tax_Rate__c", "Additional_Tax_Rate__c", "Global_Category_Tree__c", "Age_Verification_Required__c",
-		"Public_Image_URL__c", "Country__c", "Avalara_Tax_ID__c", "Country_Default_Price__c"}
+	headers := []string{"Barcode__c", "SKU__c", "Name", "Product_Title__c", "Brand__c", "Default_Tax_Rate__c", "Additional_Tax_Rate__c", "Global_Category_Tree__c", "Age_Verification_Required__c",
+		"Public_Image_URL__c", "JOKR_Entity__c", "Product_Ownership__c", "Country_Default_Price__c", "UI_Content_1__c", "UI_Content_1_UOM__c"}
 	writer.Write(headers)
 
 	for _, product := range products {
@@ -424,19 +429,27 @@ func saveProductsToCsvFile(filename string, products []Product, taxRates map[str
 		dataRow[0] = product.Barcode.String
 		dataRow[1] = product.Sku
 		dataRow[2] = product.Name
-		dataRow[3] = brands[product.Brand.String].ID                            // Brand__c
-		dataRow[4] = getDefaultTaxRateSalesForceEntity(product, taxRates).ID    // Default_Tax_Rate__c
-		dataRow[5] = getAdditionalTaxRateSalesForceEntity(product, taxRates).ID // Additional_Tax_Rate__c
-		dataRow[6] = getGlobalCategoryTree(product, categories).ID              // Global_Category_Tree__c
+		dataRow[3] = product.Name
+		dataRow[4] = brands[product.Brand.String].ID                            // Brand__c
+		dataRow[5] = getDefaultTaxRateSalesForceEntity(product, taxRates).ID    // Default_Tax_Rate__c
+		dataRow[6] = getAdditionalTaxRateSalesForceEntity(product, taxRates).ID // Additional_Tax_Rate__c
+		dataRow[7] = getGlobalCategoryTree(product, categories).ID              // Global_Category_Tree__c
 		if product.AgeRestriction {
-			dataRow[7] = "Yes - 18+"
+			dataRow[8] = "Yes - 18+"
 		} else {
-			dataRow[7] = "No"
+			dataRow[8] = "No"
 		}
-		dataRow[8] = product.Image.String
-		dataRow[9] = "Mexico" // Country__c
-		// dataRow[6] = "" // Avalara_Tax_ID__c
-		//dataRow[7] = "" // Country_Default_Price__c
+		dataRow[9] = product.Image.String
+		dataRow[10] = jokrEntity // JOKR_Entity__с
+		dataRow[11] = "JOKR owned"
+		dataRow[12] = product.MaxPrice
+		variantList := strings.Split(product.Variant, " ")
+		dataRow[13] = variantList[0]
+		if len(variantList) > 1 {
+			dataRow[14] = variantList[1]
+		}
+
+		//Underlying barcode quantity
 
 		writer.Write(dataRow)
 	}

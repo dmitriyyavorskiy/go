@@ -5,11 +5,18 @@ SELECT *
 FROM mgo.products
 where name = 'Servilletas Elite 420 pz';
 
+select * from mgo.categories_subcategories
+where categories_subcategories.sub_categories_id in ('64e7c19bdf724c5adae20abf','64e7c19bbd79ca5ada7b92d1','5b56bac4f6c3f0d9b33f1784','64e7c19b8a15db5adae09c0c')
+  and categories_subcategories.categories_id in ('64e7c19bdf724c5adae20abf','64e7c19bbd79ca5ada7b92d1','5b56bac4f6c3f0d9b33f1784','64e7c19b8a15db5adae09c0c');
+
+
 SELECT DISTINCT ON (p.sku) p.sku,
                            p.barcode,
                            p.name,
                            p.short_description,
                            p.variant,
+                           (select min(price_list) as min_price from mgo.products_inventory where sku = p.sku and zone is not null),
+                           (select max(price_list) as max_price from mgo.products_inventory where sku = p.sku and zone is not null),
                            b.name  as brand_name,
                            p.categories,
                            c.name  as category_name,
