@@ -63,6 +63,7 @@ type Product struct {
 	Variant          string         `db:"variant"`
 	MinPrice         string         `db:"min_price"`
 	MaxPrice         string         `db:"max_price"`
+	MaxQuantity      string         `db:"max_quantity"`
 	Brand            sql.NullString `db:"brand_name"`
 	Categories       sql.NullString `db:"categories"`
 	CategoryName     sql.NullString `db:"category_name"`
@@ -194,6 +195,7 @@ func readProducts(db sqlx.DB) []Product {
                            p.variant,
                            (select min(price_list) as min_price from mgo.products_inventory where sku = p.sku and zone is not null),
                            (select max(price_list) as max_price from mgo.products_inventory where sku = p.sku and zone is not null),
+                           (select max(max_per_order) as max_quantity from mgo.products_inventory where sku = p.sku and zone is not null),
                            b.name  as brand_name,
                            p.categories,
                            c.name  as category_name,
@@ -210,7 +212,13 @@ FROM mgo.products p
          JOIN mgo.categories c ON c._id = cat.category_id
          LEFT JOIN LATERAL unnest(p.categories) AS subcat(category_id) on true
          LEFT JOIN mgo.subcategories sc ON sc._id = subcat.category_id
-order by p.sku, category_name, subcategory_name;`)
+         WHERE (c.name, coalesce(sc.name, '')) in (select c.name, s.name
+         from mgo.categories c
+         join mgo.categories_subcategories cs on c._id = cs.categories_Id
+         join mgo.subcategories s on cs.sub_categories_id = s._id
+         union all
+         select c.name as name, '' as subcategory_name from mgo.categories c)
+order by p.sku, category_name, subcategory_name limit 10`)
 	if err != nil {
 		log.Fatalf("Could not read products: %v", err)
 	}
@@ -421,7 +429,10 @@ func saveProductsToCsvFile(filename string, products []Product, taxRates map[str
 
 	// Set the headers
 	headers := []string{"Barcode__c", "SKU__c", "Name", "Product_Title__c", "Brand__c", "Default_Tax_Rate__c", "Additional_Tax_Rate__c", "Global_Category_Tree__c", "Age_Verification_Required__c",
-		"Public_Image_URL__c", "JOKR_Entity__c", "Product_Ownership__c", "Country_Default_Price__c", "UI_Content_1__c", "UI_Content_1_UOM__c"}
+		"Public_Image_URL__c", "JOKR_Entity__c", "Product_Ownership__c", "Country_Default_Price__c", "UI_Content_1__c", "UI_Content_1_UOM__c", "Assortment_Type__c", "Maximum_quantity__C", "Minimum_quantity__C",
+		"Hub_Temperature_Storage__C", "Expiry_Date_Tracking_Required__c", "Reception_Temperature_Tracking_required__c", "UOM2__c", "Customer_Fulfillment_Type__c", "CRWN_Content_Ready__c", "Alcoholic_Beverage__c",
+		"Alcohol_by_Volume__c"}
+
 	writer.Write(headers)
 
 	for _, product := range products {
@@ -448,8 +459,13 @@ func saveProductsToCsvFile(filename string, products []Product, taxRates map[str
 		if len(variantList) > 1 {
 			dataRow[14] = variantList[1]
 		}
-
-		//Underlying barcode quantity
+		dataRow[15] = "Standard" // Assortment_Type__c
+		dataRow[16] = product.MaxQuantity
+		dataRow[17] = "1"
+		dataRow[18] = "Room Temperature" // Room Temperature, Refrigerated, Frozen
+		dataRow[19] = "No"
+		dataRow[20] = "No"
+		dataRow[21] = "ea" //Underlying barcode quantity e.g. ea, pk-3, pk4
 
 		writer.Write(dataRow)
 	}
