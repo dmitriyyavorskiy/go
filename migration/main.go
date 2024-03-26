@@ -74,6 +74,9 @@ type Product struct {
 	AgeRestriction   bool           `db:"age_restriction"`
 	Restricted       bool           `db:"restricted"`
 	Enabled          bool           `db:"is_enabled"`
+	Discount         sql.NullString `db:"discount"`
+	DiscountType     sql.NullString `db:"discount_type"`
+	DiscountTitle    sql.NullString `db:"discount_title"`
 }
 
 func main() {
@@ -167,13 +170,13 @@ func readCategoryTrees() []CategoryTree {
 	var categories []CategoryTree
 	err := db.Select(&categories,
 		`select distinct c._id as id, c.name as name, s._id as subcategory_id, s.name as subcategory_name, c.image as image
-					from mgo.categories c
-         			join mgo.categories_subcategories cs on c._id = cs.categories_Id
-         			join mgo.subcategories s on cs.sub_categories_id = s._id
-				union all
-				select c._id as id, c.name as name, null as subcategory_id, null as subcategory_name, c.image as image
-					from mgo.categories c
-					order by id, subcategory_id asc;`)
+	from mgo.categories c
+	join mgo.categories_subcategories cs on c._id = cs.categories_Id
+	join mgo.subcategories s on cs.sub_categories_id = s._id
+	union all
+	select c._id as id, c.name as name, null as subcategory_id, null as subcategory_name, c.image as image
+	from mgo.categories c
+	order by id, subcategory_id asc; `)
 	defer db.Close()
 
 	if err != nil {
@@ -189,36 +192,36 @@ func readCategoryTrees() []CategoryTree {
 func readProducts(db sqlx.DB) []Product {
 	var products []Product
 	err := db.Select(&products, `SELECT DISTINCT ON (p.sku) p.sku,
-                           p.barcode,
-                           p.name,
-                           p.short_description,
-                           p.variant,
-                           (select min(price_list) as min_price from mgo.products_inventory where sku = p.sku and zone is not null),
-                           (select max(price_list) as max_price from mgo.products_inventory where sku = p.sku and zone is not null),
-                           (select max(max_per_order) as max_quantity from mgo.products_inventory where sku = p.sku and zone is not null),
-                           b.name  as brand_name,
-                           p.categories,
-                           c.name  as category_name,
-                           sc.name as subcategory_name,
-                           p.image,
-                           p.tags,
-                           p.taxes,
-                           p.age_restriction,
-                           p.restricted,
-                           p.is_enabled
-FROM mgo.products p
-         LEFT JOIN mgo.brands b ON p.brand = b._id
-         LEFT JOIN LATERAL unnest(p.categories) AS cat(category_id) on true
-         JOIN mgo.categories c ON c._id = cat.category_id
-         LEFT JOIN LATERAL unnest(p.categories) AS subcat(category_id) on true
-         LEFT JOIN mgo.subcategories sc ON sc._id = subcat.category_id
-         WHERE (c.name, coalesce(sc.name, '')) in (select c.name, s.name
-         from mgo.categories c
-         join mgo.categories_subcategories cs on c._id = cs.categories_Id
-         join mgo.subcategories s on cs.sub_categories_id = s._id
-         union all
-         select c.name as name, '' as subcategory_name from mgo.categories c)
-order by p.sku, category_name, subcategory_name limit 10`)
+	p.barcode,
+	p.name,
+	p.short_description,
+	p.variant,
+	(select min(price_list) as min_price from mgo.products_inventory where sku = p.sku and zone is not null),
+	(select max(price_list) as max_price from mgo.products_inventory where sku = p.sku and zone is not null),
+	(select max(max_per_order) as max_quantity from mgo.products_inventory where sku = p.sku and zone is not null),
+	b.name  as brand_name,
+	p.categories,
+	c.name  as category_name,
+	sc.name as subcategory_name,
+	p.image,
+	p.tags,
+	p.taxes,
+	p.age_restriction,
+	p.restricted,
+	p.is_enabled
+	FROM mgo.products p
+	LEFT JOIN mgo.brands b ON p.brand = b._id
+	LEFT JOIN LATERAL unnest(p.categories) AS cat(category_id) on true
+	JOIN mgo.categories c ON c._id = cat.category_id
+	LEFT JOIN LATERAL unnest(p.categories) AS subcat(category_id) on true
+	LEFT JOIN mgo.subcategories sc ON sc._id = subcat.category_id
+	WHERE (c.name, coalesce(sc.name, '')) in (select c.name, s.name
+	from mgo.categories c
+	join mgo.categories_subcategories cs on c._id = cs.categories_Id
+	join mgo.subcategories s on cs.sub_categories_id = s._id
+	union all
+	select c.name as name, '' as subcategory_name from mgo.categories c)
+	order by p.sku, category_name, subcategory_name`)
 	if err != nil {
 		log.Fatalf("Could not read products: %v", err)
 	}
@@ -455,9 +458,13 @@ func saveProductsToCsvFile(filename string, products []Product, taxRates map[str
 		dataRow[11] = "JOKR owned"
 		dataRow[12] = product.MaxPrice
 		variantList := strings.Split(product.Variant, " ")
+
+		missedMapping := []string{"h", "tabs", "Tabs", "rollo", "rollos"}
 		dataRow[13] = variantList[0]
 		if len(variantList) > 1 {
-			dataRow[14] = variantList[1]
+			if notContains(missedMapping, variantList[1]) {
+				dataRow[14] = variantList[1]
+			}
 		}
 		dataRow[15] = "Standard" // Assortment_Type__c
 		dataRow[16] = product.MaxQuantity
@@ -465,10 +472,34 @@ func saveProductsToCsvFile(filename string, products []Product, taxRates map[str
 		dataRow[18] = "Room Temperature" // Room Temperature, Refrigerated, Frozen
 		dataRow[19] = "No"
 		dataRow[20] = "No"
-		dataRow[21] = "ea" //Underlying barcode quantity e.g. ea, pk-3, pk4
+		dataRow[21] = getPackSize(product.Name) //Underlying barcode quantity e.g. ea, pk-3, pk-4
+		dataRow[22] = "Core"                    // Customer_Fulfillment_Type__c
+		if product.Restricted {
+			dataRow[24] = "Yes"
+		}
 
 		writer.Write(dataRow)
 	}
+}
+
+func notContains(arr []string, str string) bool {
+	for _, a := range arr {
+		if a == str {
+			return false
+		}
+	}
+	return true
+}
+
+func getPackSize(productName string) string {
+	var quantity int
+	_, err := fmt.Sscanf(productName, "%d", &quantity)
+	if err != nil || !strings.Contains(productName, " Pack ") {
+		return "ea"
+	}
+	result := fmt.Sprintf("pk-%d", quantity)
+	fmt.Printf("Product is not ea %+v. Pack code is %+v\n", productName, result)
+	return result
 }
 
 func getFirstElement(input string) string {
