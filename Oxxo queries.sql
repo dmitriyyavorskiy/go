@@ -39,7 +39,7 @@ FROM mgo.products p
          join mgo.categories_subcategories cs on c._id = cs.categories_Id
          join mgo.subcategories s on cs.sub_categories_id = s._id
          union all
-         select c.name as name, '' as subcategory_name from mgo.categories c)
+         select c.name as name, '' as subcategory_name from mgo.categories c where c.name != 'Promociones')
 order by p.sku, category_name, subcategory_name;
 
 
@@ -58,3 +58,5 @@ select * from mgo.products where name = 'Papel Aluminio Reynolds Wrap 5m x 30cm 
 select * from mgo.products where name = 'Pistaches Wonderful Pistachios 100 g'
 
 select * from mgo.products where sku =  '7501000604685'
+
+

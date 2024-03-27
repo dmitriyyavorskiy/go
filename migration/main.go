@@ -4,11 +4,14 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
+	"github.com/xuri/excelize/v2"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -17,10 +20,23 @@ const (
 	psqlInfo             = "host=mioxxo-products.ce989v8mdple.us-east-1.rds.amazonaws.com port=5432 user=postgres dbname=products password=Yk9deWhjbYUUR5LEF8SnMf7w9jghPf sslmode=disable"
 	recordTypeBrandOwner = "012Hp000001mPmGIAU"
 	recordTypeBrand      = "012Hp000001mPmEIAU"
+	recordTypeVendor     = "012Hp000001mPmDIAU"
+	recordTypeHub        = "012Hp000001mPmBIAU"
 	jokrEntity           = "001Hp00002kvRgtIAE"
 )
 
 var brandsMap = make(map[string]Brand)
+
+type ProductChild struct {
+	Sku      string
+	Quantity string
+}
+
+type ProductSupplier struct {
+	Item         string
+	SupplierId   int
+	SupplierName string
+}
 
 type Brand struct {
 	ID    string         `db:"_id"`
@@ -61,9 +77,9 @@ type Product struct {
 	Name             string         `db:"name"`
 	ShortDescription string         `db:"short_description"`
 	Variant          string         `db:"variant"`
-	MinPrice         string         `db:"min_price"`
-	MaxPrice         string         `db:"max_price"`
-	MaxQuantity      string         `db:"max_quantity"`
+	MinPrice         float32        `db:"min_price"`
+	MaxPrice         float32        `db:"max_price"`
+	MaxQuantity      int            `db:"max_quantity"`
 	Brand            sql.NullString `db:"brand_name"`
 	Categories       sql.NullString `db:"categories"`
 	CategoryName     sql.NullString `db:"category_name"`
@@ -71,6 +87,7 @@ type Product struct {
 	Image            sql.NullString `db:"image"`
 	Tags             sql.NullString `db:"tags"`
 	Taxes            sql.NullString `db:"taxes"`
+	Children         sql.NullString `db:"children"`
 	AgeRestriction   bool           `db:"age_restriction"`
 	Restricted       bool           `db:"restricted"`
 	Enabled          bool           `db:"is_enabled"`
@@ -102,6 +119,16 @@ func main() {
 	////// TODO import data to the Salesforce here
 	////// TODO export Categories csv file from Salesforce
 
+	//productSuppliers, suppliers := readSuppliers()
+	//
+	//for _, value := range productSuppliers {
+	//	fmt.Printf("Product suppliers %+v\n", value)
+	//}
+	//
+	//for key, value := range suppliers {
+	//	fmt.Printf("Supplier Key %+v Value %+v\n", key, value)
+	//}
+
 	db := createDatabaseConnection()
 	var products = readProducts(*db)
 	defer db.Close()
@@ -115,16 +142,16 @@ func main() {
 	}
 
 	categories := readSalesforceCategories("migration/sandbox/categoryExported.csv")
-	for key, value := range categories {
-		if strings.Contains(value.Name, "Oxxo: ") {
-			fmt.Printf("Key '%s' CategoryTree %+v\n", key, value)
-		}
-	}
+	//for key, value := range categories {
+	//	if strings.Contains(value.Name, "Oxxo: ") {
+	//		fmt.Printf("Key '%s' CategoryTree %+v\n", key, value)
+	//	}
+	//}
 
 	brands := readSalesforceEntities("migration/sandbox/brandExported.csv", recordTypeBrand)
-	for key, value := range brands {
-		fmt.Printf("Key '%s' Brand %+v\n", key, value)
-	}
+	//for key, value := range brands {
+	//	fmt.Printf("Key '%s' Brand %+v\n", key, value)
+	//}
 
 	taxRates := readSalesforceEntities("migration/sandbox/taxRateExported.csv", "")
 	for key, value := range taxRates {
@@ -192,36 +219,37 @@ func readCategoryTrees() []CategoryTree {
 func readProducts(db sqlx.DB) []Product {
 	var products []Product
 	err := db.Select(&products, `SELECT DISTINCT ON (p.sku) p.sku,
-	p.barcode,
-	p.name,
-	p.short_description,
-	p.variant,
-	(select min(price_list) as min_price from mgo.products_inventory where sku = p.sku and zone is not null),
-	(select max(price_list) as max_price from mgo.products_inventory where sku = p.sku and zone is not null),
-	(select max(max_per_order) as max_quantity from mgo.products_inventory where sku = p.sku and zone is not null),
-	b.name  as brand_name,
-	p.categories,
-	c.name  as category_name,
-	sc.name as subcategory_name,
-	p.image,
-	p.tags,
-	p.taxes,
-	p.age_restriction,
-	p.restricted,
-	p.is_enabled
-	FROM mgo.products p
-	LEFT JOIN mgo.brands b ON p.brand = b._id
-	LEFT JOIN LATERAL unnest(p.categories) AS cat(category_id) on true
-	JOIN mgo.categories c ON c._id = cat.category_id
-	LEFT JOIN LATERAL unnest(p.categories) AS subcat(category_id) on true
-	LEFT JOIN mgo.subcategories sc ON sc._id = subcat.category_id
-	WHERE (c.name, coalesce(sc.name, '')) in (select c.name, s.name
-	from mgo.categories c
-	join mgo.categories_subcategories cs on c._id = cs.categories_Id
-	join mgo.subcategories s on cs.sub_categories_id = s._id
-	union all
-	select c.name as name, '' as subcategory_name from mgo.categories c)
-	order by p.sku, category_name, subcategory_name`)
+                           p.barcode,
+                           p.name,
+                           p.short_description,
+                           p.variant,
+                           (select min(price_list) as min_price from mgo.products_inventory where sku = p.sku and zone is not null),
+                           (select max(price_list) as max_price from mgo.products_inventory where sku = p.sku and zone is not null),
+                           (select max(max_per_order) as max_quantity from mgo.products_inventory where sku = p.sku and zone is not null),
+                           b.name  as brand_name,
+                           p.categories,
+                           c.name  as category_name,
+                           sc.name as subcategory_name,
+                           p.image,
+                           p.tags,
+                           p.taxes,
+                           p.children,
+                           p.age_restriction,
+                           p.restricted,
+                           p.is_enabled
+							FROM mgo.products p
+         					LEFT JOIN mgo.brands b ON p.brand = b._id
+         					LEFT JOIN LATERAL unnest(p.categories) AS cat(category_id) on true
+         					JOIN mgo.categories c ON c._id = cat.category_id
+         					LEFT JOIN LATERAL unnest(p.categories) AS subcat(category_id) on true
+         					LEFT JOIN mgo.subcategories sc ON sc._id = subcat.category_id
+         					WHERE (c.name, coalesce(sc.name, '')) in (select c.name, s.name
+         					from mgo.categories c
+         					join mgo.categories_subcategories cs on c._id = cs.categories_Id
+         					join mgo.subcategories s on cs.sub_categories_id = s._id
+         					union all
+         					select c.name as name, '' as subcategory_name from mgo.categories c where c.name != 'Promociones')
+							order by p.sku, category_name, subcategory_name desc;`)
 	if err != nil {
 		log.Fatalf("Could not read products: %v", err)
 	}
@@ -444,10 +472,11 @@ func saveProductsToCsvFile(filename string, products []Product, taxRates map[str
 		dataRow[1] = product.Sku
 		dataRow[2] = product.Name
 		dataRow[3] = product.Name
-		dataRow[4] = brands[product.Brand.String].ID                            // Brand__c
-		dataRow[5] = getDefaultTaxRateSalesForceEntity(product, taxRates).ID    // Default_Tax_Rate__c
-		dataRow[6] = getAdditionalTaxRateSalesForceEntity(product, taxRates).ID // Additional_Tax_Rate__c
-		dataRow[7] = getGlobalCategoryTree(product, categories).ID              // Global_Category_Tree__c
+		dataRow[4] = brands[product.Brand.String].ID
+		defaultTaxRate, additionalTaxRate := getDefaultTaxRateSalesForceEntity(product, taxRates)
+		dataRow[5] = defaultTaxRate.ID                             // Default_Tax_Rate__c
+		dataRow[6] = additionalTaxRate.ID                          // Additional_Tax_Rate__c
+		dataRow[7] = getGlobalCategoryTree(product, categories).ID // Global_Category_Tree__c
 		if product.AgeRestriction {
 			dataRow[8] = "Yes - 18+"
 		} else {
@@ -456,20 +485,27 @@ func saveProductsToCsvFile(filename string, products []Product, taxRates map[str
 		dataRow[9] = product.Image.String
 		dataRow[10] = jokrEntity // JOKR_Entity__с
 		dataRow[11] = "JOKR owned"
-		dataRow[12] = product.MaxPrice
+		dataRow[12] = fmt.Sprintf("%.2f", product.MaxPrice/100) // Country_Default_Price__c
 		variantList := strings.Split(product.Variant, " ")
 
-		missedMapping := []string{"h", "tabs", "Tabs", "rollo", "rollos"}
-		dataRow[13] = variantList[0]
+		dataRow[13] = strings.ReplaceAll(variantList[0], ",", ".")
 		if len(variantList) > 1 {
-			if notContains(missedMapping, variantList[1]) {
+			if contains([]string{"tabs", "Tabs"}, variantList[1]) {
+				dataRow[14] = "Tabs"
+			} else if contains([]string{"h"}, variantList[1]) {
+				dataRow[14] = "h"
+			} else if contains([]string{"rollo", "rollos", "Rollo", "Rollos"}, variantList[1]) {
+				dataRow[14] = "Rollos"
+			} else {
 				dataRow[14] = variantList[1]
 			}
 		}
-		dataRow[15] = "Standard" // Assortment_Type__c
-		dataRow[16] = product.MaxQuantity
-		dataRow[17] = "1"
-		dataRow[18] = "Room Temperature" // Room Temperature, Refrigerated, Frozen
+
+		_, assortmentType := getProductChildrenAdAssortmentType(product)
+		dataRow[15] = assortmentType // Assortment_Type__c
+		dataRow[16] = fmt.Sprintf("%d", product.MaxQuantity)
+		dataRow[17] = "1"                // Minimum_quantity__C
+		dataRow[18] = "Room Temperature" // Hub_Temperature_Storage__C  Room Temperature, Refrigerated, Frozen
 		dataRow[19] = "No"
 		dataRow[20] = "No"
 		dataRow[21] = getPackSize(product.Name) //Underlying barcode quantity e.g. ea, pk-3, pk-4
@@ -491,6 +527,15 @@ func notContains(arr []string, str string) bool {
 	return true
 }
 
+func contains(arr []string, str string) bool {
+	for _, a := range arr {
+		if a == str {
+			return true
+		}
+	}
+	return false
+}
+
 func getPackSize(productName string) string {
 	var quantity int
 	_, err := fmt.Sscanf(productName, "%d", &quantity)
@@ -498,7 +543,7 @@ func getPackSize(productName string) string {
 		return "ea"
 	}
 	result := fmt.Sprintf("pk-%d", quantity)
-	fmt.Printf("Product is not ea %+v. Pack code is %+v\n", productName, result)
+	//fmt.Printf("Product is not ea %+v. Pack code is %+v\n", productName, result)
 	return result
 }
 
@@ -521,16 +566,28 @@ func getFirstElement(input string) string {
 	return ""
 }
 
-func getDefaultTaxRateSalesForceEntity(product Product, taxRates map[string]SalesForceEntity) SalesForceEntity {
-	taxRate := getTaxSalesForceEntity(product, taxRates, 0)
-	fmt.Printf("Default taxRate %+v set for product %+v \n", taxRate, product)
-	return taxRate
-}
+func getDefaultTaxRateSalesForceEntity(product Product, taxRates map[string]SalesForceEntity) (SalesForceEntity, SalesForceEntity) {
+	firstTaxRate := getTaxSalesForceEntity(product, taxRates, 0)
+	if strings.Contains(firstTaxRate.Name, "IEPS") {
+		defaultTaxRate, err := getTaxSalesForceEntityByName(taxRates, "IVA0")
+		if err != nil {
+			log.Fatal(err)
+		}
+		//fmt.Printf("Default Tax rate set to  %+v and additional to %+v for product %+v \n", defaultTaxRate.Name, firstTaxRate.Name, product)
+		return defaultTaxRate, firstTaxRate
+	}
+	additionalTaxRate := getTaxSalesForceEntity(product, taxRates, 1)
+	//fmt.Printf("Default Tax rate set to  %+v and additional to %+v for product %+v \n", firstTaxRate.Name, additionalTaxRate.Name, product)
 
-func getAdditionalTaxRateSalesForceEntity(product Product, taxRates map[string]SalesForceEntity) SalesForceEntity {
-	taxRate := getTaxSalesForceEntity(product, taxRates, 1)
-	fmt.Printf("Additional taxRate %+v set for product %+v \n", taxRate, product)
-	return taxRate
+	if firstTaxRate.Name == additionalTaxRate.Name {
+		additionalTaxRate = SalesForceEntity{}
+	}
+
+	if strings.HasPrefix(firstTaxRate.Name, "IVA0") && strings.HasPrefix(additionalTaxRate.Name, "IVA") {
+		return additionalTaxRate, SalesForceEntity{}
+	}
+
+	return firstTaxRate, additionalTaxRate
 }
 
 func getTaxSalesForceEntity(product Product, taxRates map[string]SalesForceEntity, index int) SalesForceEntity {
@@ -543,12 +600,77 @@ func getTaxSalesForceEntity(product Product, taxRates map[string]SalesForceEntit
 	if (taxes == nil) || (len(taxes) <= index) {
 		return SalesForceEntity{}
 	}
+
+	if len(taxes) > 2 {
+		fmt.Sprintf("There are more then 2 taxes for the product: %+v", product)
+	}
+
 	key := fmt.Sprintf("%s%d", taxes[index].Type, taxes[index].Rate)
 
 	return taxRates[key]
 }
 
+func getProductChildrenAdAssortmentType(product Product) ([]ProductChild, string) {
+	var children []ProductChild
+	err := json.Unmarshal([]byte(product.Children.String), &children)
+	if err != nil {
+		fmt.Sprintf("Could not unmarshal children for product %+v: %+v", product, product)
+		return []ProductChild{}, "Standard"
+	}
+
+	if len(children) > 0 {
+		fmt.Printf("Product %+v has children %+v\n", product.Name, children)
+		return children, "Bundle"
+	}
+
+	return []ProductChild{}, "Standard"
+}
+
+func getTaxSalesForceEntityByName(taxRates map[string]SalesForceEntity, name string) (SalesForceEntity, error) {
+	for _, taxRate := range taxRates {
+		if taxRate.Name == name {
+			return taxRate, nil
+		}
+	}
+	return SalesForceEntity{}, errors.New("ax rate with the given name not found")
+}
+
 func getGlobalCategoryTree(product Product, categories map[string]SalesForceCategory) SalesForceCategory {
 	cetegoryTree := categories[clearNameForExport(product.CategoryName.String)+":"+clearNameForExport(product.SubcategoryName.String)]
 	return cetegoryTree
+}
+
+func readSuppliers() ([]ProductSupplier, map[int]ProductSupplier) {
+	f, err := excelize.OpenFile("migration/Suppliers_store.xlsx")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	rows, err := f.GetRows("ITEM_SUPPLIER")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var suppliers []ProductSupplier
+	suppliersMap := make(map[int]ProductSupplier)
+	for i, row := range rows {
+		if i == 0 {
+			continue
+		}
+		supplierId, err := strconv.Atoi(row[1])
+		if err != nil {
+			supplierId = 0
+		}
+		supplier := ProductSupplier{
+			Item:         row[0],
+			SupplierId:   supplierId,
+			SupplierName: row[2],
+		}
+		suppliers = append(suppliers, supplier)
+		suppliersMap[supplierId] = supplier
+	}
+
+	fmt.Sprintf("There are %v rows\n", len(rows))
+
+	return suppliers, suppliersMap
 }
