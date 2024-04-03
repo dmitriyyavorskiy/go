@@ -11,6 +11,7 @@ import (
 	"github.com/xuri/excelize/v2"
 	"log"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -23,6 +24,7 @@ const (
 	recordTypeVendor     = "012Hp000001mPmDIAU"
 	recordTypeHub        = "012Hp000001mPmBIAU"
 	jokrEntity           = "001Hp00002kvRgtIAE"
+	integrationOfBtlr    = "005Hp00000igLP3IAM"
 )
 
 var brandsMap = make(map[string]Brand)
@@ -55,6 +57,19 @@ type SalesForceCategory struct {
 	Name               string
 	CategoryLevel1Name string
 	CategoryLevel2Name string
+}
+
+type SalesForceAccount struct {
+	ID              string
+	Name            string
+	InternalId      string
+	ReferenceTypeId string
+}
+
+type SalesForceProduct struct {
+	ID   string
+	Name string
+	Sku  string
 }
 
 type CategoryTree struct {
@@ -96,6 +111,14 @@ type Product struct {
 	DiscountTitle    sql.NullString `db:"discount_title"`
 }
 
+type Inventory struct {
+	Sku       string  `db:"sku"`
+	Store     string  `db:"store"`
+	Zone      string  `db:"zone"`
+	StoreCode string  `db:"cr"`
+	Price     float32 `db:"price_list"`
+}
+
 func main() {
 	//var brands = readBrands()
 	//saveBrandOwnersToCsvFile("brandowners.csv", brands)
@@ -119,46 +142,77 @@ func main() {
 	////// TODO import data to the Salesforce here
 	////// TODO export Categories csv file from Salesforce
 
-	//productSuppliers, suppliers := readSuppliers()
+	//db := createDatabaseConnection()
+	//var products = readProducts(*db)
+	//defer db.Close()
+	//for _, value := range products {
+	//	fmt.Printf("Product %+v \n", value)
+	//}
 	//
+	//
+	//categories := readSalesforceCategories("migration/sandbox/categoryExported.csv")
+	////for key, value := range categories {
+	////	if strings.Contains(value.Name, "Oxxo: ") {
+	////		fmt.Printf("Key '%s' CategoryTree %+v\n", key, value)
+	////	}
+	////}
+	//
+	//brands := readSalesforceEntities("migration/sandbox/brandExported.csv", recordTypeBrand)
+	////for key, value := range brands {
+	////	fmt.Printf("Key '%s' Brand %+v\n", key, value)
+	////}
+	//
+	//taxRates := readSalesforceEntities("migration/sandbox/taxRateExported.csv", "")
+	//for key, value := range taxRates {
+	//	fmt.Printf("Key '%s' Tax Rate %+v\n", key, value)
+	//}
+	//
+	//saveProductsToCsvFile("products.csv", products, taxRates, brands, categories)
+
+	productSuppliers, suppliers := readSuppliers()
+
 	//for _, value := range productSuppliers {
 	//	fmt.Printf("Product suppliers %+v\n", value)
 	//}
 	//
-	//for key, value := range suppliers {
-	//	fmt.Printf("Supplier Key %+v Value %+v\n", key, value)
-	//}
-
-	db := createDatabaseConnection()
-	var products = readProducts(*db)
-	defer db.Close()
-	for _, value := range products {
-		fmt.Printf("Product %+v \n", value)
+	for key, value := range suppliers {
+		fmt.Printf("Supplier Key %+v Value %+v\n", key, value)
 	}
 
-	hubs := readSalesforceEntities("migration/sandbox/hubExported.csv", "")
-	for key, value := range hubs {
-		fmt.Printf("Key '%s' Hub %+v\n", key, value)
+	//_, suppliers := readSuppliers()
+	//saveVendorsToCsvFile("vendors.csv", suppliers)
+
+	// TODO import data to the Salesforce here
+	// TODO export Account and Product csv file from Salesforce
+
+	//salesForceVendors := readSalesforceAccounts("migration/sandbox/accountExported.csv", recordTypeVendor, "PARTNER_CODE__C")
+	salesForceHubs := readSalesforceAccounts("migration/sandbox/accountExported.csv", recordTypeHub, "Name")
+
+	for key, value := range salesForceHubs {
+		fmt.Printf("Key %s  Hub %+v\n", key, value)
 	}
 
-	categories := readSalesforceCategories("migration/sandbox/categoryExported.csv")
-	//for key, value := range categories {
-	//	if strings.Contains(value.Name, "Oxxo: ") {
-	//		fmt.Printf("Key '%s' CategoryTree %+v\n", key, value)
-	//	}
+	salesForceProducts := readSalesforceProducts("migration/sandbox/productExported.csv")
+
+	//for key, value := range products {
+	//	fmt.Printf("Key %s  Product %+v\n", key, value)
 	//}
 
-	brands := readSalesforceEntities("migration/sandbox/brandExported.csv", recordTypeBrand)
-	//for key, value := range brands {
-	//	fmt.Printf("Key '%s' Brand %+v\n", key, value)
-	//}
+	//saveVendorProductsToCsvFile("vendorproducts.csv", productSuppliers, products, salesForceVendors, salesForceProducts)
 
-	taxRates := readSalesforceEntities("migration/sandbox/taxRateExported.csv", "")
-	for key, value := range taxRates {
-		fmt.Printf("Key '%s' Tax Rate %+v\n", key, value)
+	// TODO import data to the Salesforce here
+	// TODO export Vendor Account csv file from Salesforce
+
+	inventory := readInventory()
+
+	for _, value := range inventory {
+		fmt.Printf("Inventory %+v\n", value)
 	}
 
-	saveProductsToCsvFile("products.csv", products, taxRates, brands, categories, hubs)
+	salesForceVendorProducts := readSalesforceEntities("migration/sandbox/vendorProductExported.csv", "")
+
+	saveHubProductsToCsvFile("hubproducts.csv", productSuppliers, inventory, salesForceProducts, salesForceVendorProducts)
+
 }
 
 func createDatabaseConnection() *sqlx.DB {
@@ -254,6 +308,19 @@ func readProducts(db sqlx.DB) []Product {
 		log.Fatalf("Could not read products: %v", err)
 	}
 	return products
+}
+
+func readInventory() []Inventory {
+	db := createDatabaseConnection()
+	var inventories []Inventory
+	err := db.Select(&inventories, `select sku, store, zone, cr, price_list from mgo.products_inventory pi
+												LEFT JOIN mgo.products_inventory_stores pis on pi.store = pis._id
+												where store = '64b15d8c9f6d5bf787cd07c6'`)
+	if err != nil {
+		log.Fatalf("Could not read inventories: %v", err)
+	}
+	defer db.Close()
+	return inventories
 }
 
 func readBrand(db sqlx.DB, brandId string) Brand {
@@ -352,6 +419,84 @@ func readSalesforceCategories(filename string) map[string]SalesForceCategory {
 	return result
 }
 
+func readSalesforceAccounts(filename string, recordTypeId string, keyHeader string) map[string]SalesForceAccount {
+	data := getDataFromFile(filename)
+
+	var nameColumn int
+	var idColumn int
+	var externalIdColumn int
+	var referenceTypeIColumn int
+
+	result := make(map[string]SalesForceAccount)
+
+	for i, row := range data {
+
+		if i == 0 {
+			for u, header := range row {
+				if header == "BUSINESS_NAME__C" {
+					nameColumn = u
+				}
+				if header == "ID" {
+					idColumn = u
+				}
+				if header == keyHeader {
+					externalIdColumn = u
+				}
+				if header == "RECORDTYPEID" {
+					referenceTypeIColumn = u
+				}
+			}
+
+		} else {
+			if row[referenceTypeIColumn] == recordTypeId {
+				result[row[externalIdColumn]] = SalesForceAccount{
+					ID:              row[idColumn],
+					Name:            row[nameColumn],
+					InternalId:      row[externalIdColumn],
+					ReferenceTypeId: row[referenceTypeIColumn],
+				}
+			}
+		}
+	}
+	return result
+}
+
+func readSalesforceProducts(filename string) map[string]SalesForceProduct {
+	data := getDataFromFile(filename)
+
+	var nameColumn int
+	var idColumn int
+	var skuColumn int
+
+	result := make(map[string]SalesForceProduct)
+
+	for i, row := range data {
+		if i == 0 {
+			for u, header := range row {
+				if header == "NAME" {
+					nameColumn = u
+				}
+				if header == "ID" {
+					idColumn = u
+				}
+				if header == "SKU__C" {
+					skuColumn = u
+				}
+			}
+		} else {
+			result[row[skuColumn]] = SalesForceProduct{
+				ID:   row[idColumn],
+				Name: row[nameColumn],
+				Sku:  row[skuColumn],
+			}
+		}
+	}
+
+	fmt.Printf("There are %d products \n", len(result))
+
+	return result
+}
+
 func getDataFromFile(filename string) [][]string {
 	file, err := os.Open(filename)
 	if err != nil {
@@ -445,7 +590,7 @@ func clearNameForExport(s string) string {
 	return strings.ReplaceAll(s, ",", " &")
 }
 
-func saveProductsToCsvFile(filename string, products []Product, taxRates map[string]SalesForceEntity, brands map[string]SalesForceEntity, categories map[string]SalesForceCategory, hubs map[string]SalesForceEntity) {
+func saveProductsToCsvFile(filename string, products []Product, taxRates map[string]SalesForceEntity, brands map[string]SalesForceEntity, categories map[string]SalesForceCategory) {
 
 	fmt.Printf("There are %d products\n", len(products))
 
@@ -486,20 +631,10 @@ func saveProductsToCsvFile(filename string, products []Product, taxRates map[str
 		dataRow[10] = jokrEntity // JOKR_Entity__с
 		dataRow[11] = "JOKR owned"
 		dataRow[12] = fmt.Sprintf("%.2f", product.MaxPrice/100) // Country_Default_Price__c
-		variantList := strings.Split(product.Variant, " ")
 
-		dataRow[13] = strings.ReplaceAll(variantList[0], ",", ".")
-		if len(variantList) > 1 {
-			if contains([]string{"tabs", "Tabs"}, variantList[1]) {
-				dataRow[14] = "Tabs"
-			} else if contains([]string{"h"}, variantList[1]) {
-				dataRow[14] = "h"
-			} else if contains([]string{"rollo", "rollos", "Rollo", "Rollos"}, variantList[1]) {
-				dataRow[14] = "Rollos"
-			} else {
-				dataRow[14] = variantList[1]
-			}
-		}
+		amount, measurement := getVariantFields(product.Variant)
+		dataRow[13] = amount
+		dataRow[14] = measurement
 
 		_, assortmentType := getProductChildrenAdAssortmentType(product)
 		dataRow[15] = assortmentType // Assortment_Type__c
@@ -516,6 +651,162 @@ func saveProductsToCsvFile(filename string, products []Product, taxRates map[str
 
 		writer.Write(dataRow)
 	}
+}
+
+func saveVendorsToCsvFile(filename string, vendors map[int]ProductSupplier) {
+	file, err := os.Create(filename)
+	if err != nil {
+		log.Fatalf("Could not create file: %v", err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// Set the headers
+	headers := []string{"Name", "Business_name__C", "RecordTypeId", "JOKR_Entity__c", "Portal_url__c", "Status__c", "Spot_Buy_Vendor__c", "Commercial_Owner__c", "PO_Reception_Method__c", "Finance_contact_email__c",
+		"Finance_contact_full_name__c", "Finance_contact_phone__c", "Default_delivery_time_setting__c", "Default_lead_time__c", "Country__c", "Partner_code__c", "Location_scope__c"}
+	writer.Write(headers)
+
+	i := 0
+	for _, vendor := range vendors {
+		//if strings.Contains(vendor.SupplierName, "N/A") {
+		//	continue
+		//}
+		//if i < 10 {
+		dataRow := make([]string, len(headers))
+		dataRow[0] = strings.ReplaceAll(vendor.SupplierName, ",", ".")
+		dataRow[1] = strings.ReplaceAll(vendor.SupplierName, ",", ".")
+		dataRow[2] = recordTypeVendor
+		dataRow[3] = jokrEntity                        // JOKR_Entity__с
+		dataRow[5] = "Active"                          // status__c
+		dataRow[6] = "No"                              // Spot_Buy_Vendor__c
+		dataRow[7] = integrationOfBtlr                 // Commercial_Owner__c
+		dataRow[8] = "N/A"                             // PO_Reception_Method__c
+		dataRow[9] = "dmitriy.yavorskiy@icemobile.com" // Finance_contact_email__c
+		dataRow[10] = "Dmitriy"                        // Finance_contact_full_name__c
+		dataRow[11] = "1234567890"                     // Finance_contact_phone__c
+		dataRow[12] = "Calendar Days"                  // Default_delivery_time__setting_c
+		dataRow[13] = "1"                              // Default_lead_time__c
+		//dataRow[14] = "Mexico"                             // Country__c
+		dataRow[15] = fmt.Sprintf("%d", vendor.SupplierId) // Partner_code__c
+		dataRow[16] = "Country-wide"                       // Location_scope__c
+
+		writer.Write(dataRow)
+		i++
+		//}
+	}
+}
+
+func saveVendorProductsToCsvFile(filename string, productSuppliers []ProductSupplier, products []Product, salesForceVendors map[string]SalesForceAccount, salesForceProducts map[string]SalesForceProduct) {
+	file, err := os.Create(filename)
+	if err != nil {
+		log.Fatalf("Could not create file: %v", err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// Set the headers
+	headers := []string{"Name", "Account__c", "Product__c", "PURCHASING_STATUS__C", "LAST_COST__C", "MINIMUM_QUANTITY__C"}
+	writer.Write(headers)
+
+	productsMap := convertProductsToMap(products)
+
+	i := 0
+	for _, vendorProduct := range productSuppliers {
+		if (salesForceProducts[vendorProduct.Item] == SalesForceProduct{}) {
+			fmt.Printf("Product not found %+v\n", vendorProduct)
+			continue
+		}
+		//if i < 10 {
+		dataRow := make([]string, len(headers))
+		dataRow[0] = fmt.Sprintf("%s - %d", vendorProduct.Item, vendorProduct.SupplierId)
+		dataRow[1] = salesForceVendors[strconv.Itoa(vendorProduct.SupplierId)].ID
+		dataRow[2] = salesForceProducts[vendorProduct.Item].ID
+		dataRow[3] = "Available to Purchase"
+		dataRow[4] = fmt.Sprintf("%.2f", productsMap[vendorProduct.Item].MinPrice/100)
+		dataRow[5] = "1"
+		writer.Write(dataRow)
+		i++
+		//}
+	}
+
+	fmt.Printf("There are %d/%d product salesForceVendors\n", i, len(productSuppliers))
+}
+
+func saveHubProductsToCsvFile(filename string, productSuppliers []ProductSupplier, inventory []Inventory, salesForceProducts map[string]SalesForceProduct, salesForceVendorProducts map[string]SalesForceEntity) {
+	file, err := os.Create(filename)
+	if err != nil {
+		log.Fatalf("Could not create file: %v", err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// Set the headers
+	headers := []string{"Name", "HUB__C", "MAIN_VENDOR_PRODUCT__C", "RETAIL_PRICE__C", "HUB_SKU_TEXT__C", "PRODUCT__C"}
+	writer.Write(headers)
+
+	uniqueVendorProductMap := make(map[string]ProductSupplier)
+	for _, vendorProduct := range productSuppliers {
+		uniqueVendorProductMap[vendorProduct.Item] = vendorProduct
+	}
+
+	i := 0
+	for _, inventory := range inventory {
+
+		vendorProductName := fmt.Sprintf("%s - %d", inventory.Sku, uniqueVendorProductMap[inventory.Sku].SupplierId)
+
+		if (salesForceVendorProducts[vendorProductName] == SalesForceEntity{}) {
+			fmt.Printf("Vendor Product %s not found %+v\n", vendorProductName, inventory)
+			continue
+		}
+		//if i < 10 {
+		dataRow := make([]string, len(headers))
+		dataRow[0] = fmt.Sprintf("%s - %d - %s", inventory.Sku, uniqueVendorProductMap[inventory.Sku].SupplierId, inventory.StoreCode)
+		dataRow[1] = "a0AHp000013OKbcMAG" // salesForceAccount[inventory.Store].ID
+		dataRow[2] = salesForceVendorProducts[vendorProductName].ID
+		dataRow[3] = fmt.Sprintf("%.2f", inventory.Price/100)
+		dataRow[4] = inventory.Sku
+		dataRow[5] = salesForceProducts[inventory.Sku].ID
+		writer.Write(dataRow)
+		//}
+		i++
+	}
+
+	fmt.Printf("There are %d/%d hub products\n", i, len(inventory))
+}
+
+func getVariantFields(variant string) (string, string) {
+	variant = strings.ReplaceAll(variant, ",", ".")
+	variant = strings.ReplaceAll(variant, "..", ".")
+	variant = strings.ReplaceAll(variant, "17*3", "51")
+	variant = insertSpace(variant)
+
+	variantList := strings.Split(variant, " ")
+
+	amount := variantList[0]
+
+	var measurement string
+	if len(variantList) > 1 {
+		if contains([]string{"tabs", "Tabs"}, variantList[1]) {
+			measurement = "Tabs"
+		} else if contains([]string{"rollo", "rollos", "Rollo", "Rollos"}, variantList[1]) {
+			measurement = "Rollos"
+		} else {
+			measurement = variantList[1]
+		}
+	}
+
+	return amount, measurement
+}
+
+func insertSpace(s string) string {
+	re := regexp.MustCompile(`([0-9]+)([a-zA-Z]+)`)
+	return re.ReplaceAllString(s, `$1 $2`)
 }
 
 func notContains(arr []string, str string) bool {
@@ -640,6 +931,14 @@ func getGlobalCategoryTree(product Product, categories map[string]SalesForceCate
 	return cetegoryTree
 }
 
+func convertProductsToMap(products []Product) map[string]Product {
+	result := make(map[string]Product)
+	for _, product := range products {
+		result[product.Sku] = product
+	}
+	return result
+}
+
 func readSuppliers() ([]ProductSupplier, map[int]ProductSupplier) {
 	f, err := excelize.OpenFile("migration/Suppliers_store.xlsx")
 	if err != nil {
@@ -670,7 +969,9 @@ func readSuppliers() ([]ProductSupplier, map[int]ProductSupplier) {
 		suppliersMap[supplierId] = supplier
 	}
 
-	fmt.Sprintf("There are %v rows\n", len(rows))
+	fmt.Printf("There are %d rows\n", len(rows))
+
+	fmt.Printf("There are %d unique suppliers\n", len(suppliersMap))
 
 	return suppliers, suppliersMap
 }

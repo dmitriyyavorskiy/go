@@ -55,8 +55,12 @@ from mgo.categories c;
 
 select * from mgo.products where name = 'Papel Aluminio Reynolds Wrap 5m x 30cm 1 pz';
 
-select * from mgo.products where name = 'Pistaches Wonderful Pistachios 100 g'
+select * from mgo.products where name = 'Pistaches Wonderful Pistachios 100 g';
 
-select * from mgo.products where sku =  '7501000604685'
+select * from mgo.products where sku =  '7501024519132';
+
+select sku, store, zone, cr, price_list from mgo.products_inventory pi
+         LEFT JOIN mgo.products_inventory_stores pis on pi.store = pis._id
+         where store = '64b15d8c9f6d5bf787cd07c6'
 
 
