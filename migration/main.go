@@ -40,10 +40,24 @@ type ProductSupplier struct {
 	SupplierName string
 }
 
+type ProductSupplierKey struct {
+	Item       string
+	SupplierId int
+}
+
 type Brand struct {
 	ID    string         `db:"_id"`
 	Name  sql.NullString `db:"name"`
 	Image sql.NullString `db:"image"`
+}
+
+type Hub struct {
+	ID     string `db:"_id"`
+	Name   string `db:"name"`
+	Status string `db:"status"`
+	ZoneId string `db:"zone_id"`
+	Type   string `db:"type"`
+	Code   string `db:"cr"`
 }
 
 type SalesForceEntity struct {
@@ -62,8 +76,10 @@ type SalesForceCategory struct {
 type SalesForceAccount struct {
 	ID              string
 	Name            string
+	BusinessName    string
 	InternalId      string
 	ReferenceTypeId string
+	Status          string
 }
 
 type SalesForceProduct struct {
@@ -112,11 +128,11 @@ type Product struct {
 }
 
 type Inventory struct {
-	Sku       string  `db:"sku"`
-	Store     string  `db:"store"`
-	Zone      string  `db:"zone"`
-	StoreCode string  `db:"cr"`
-	Price     float32 `db:"price_list"`
+	Sku       string         `db:"sku"`
+	Store     string         `db:"store"`
+	Zone      sql.NullString `db:"zone"`
+	StoreCode string         `db:"cr"`
+	Price     float32        `db:"price_list"`
 }
 
 func main() {
@@ -142,9 +158,8 @@ func main() {
 	////// TODO import data to the Salesforce here
 	////// TODO export Categories csv file from Salesforce
 
-	//db := createDatabaseConnection()
-	//var products = readProducts(*db)
-	//defer db.Close()
+	//var products = readProducts()
+
 	//for _, value := range products {
 	//	fmt.Printf("Product %+v \n", value)
 	//}
@@ -171,6 +186,8 @@ func main() {
 
 	productSuppliers, suppliers := readSuppliers()
 
+	productSuppliers = filterUniqueProductSuppliers(productSuppliers)
+
 	//for _, value := range productSuppliers {
 	//	fmt.Printf("Product suppliers %+v\n", value)
 	//}
@@ -186,11 +203,6 @@ func main() {
 	// TODO export Account and Product csv file from Salesforce
 
 	//salesForceVendors := readSalesforceAccounts("migration/sandbox/accountExported.csv", recordTypeVendor, "PARTNER_CODE__C")
-	salesForceHubs := readSalesforceAccounts("migration/sandbox/accountExported.csv", recordTypeHub, "Name")
-
-	for key, value := range salesForceHubs {
-		fmt.Printf("Key %s  Hub %+v\n", key, value)
-	}
 
 	salesForceProducts := readSalesforceProducts("migration/sandbox/productExported.csv")
 
@@ -198,21 +210,62 @@ func main() {
 	//	fmt.Printf("Key %s  Product %+v\n", key, value)
 	//}
 
-	//saveVendorProductsToCsvFile("vendorproducts.csv", productSuppliers, products, salesForceVendors, salesForceProducts)
+	// saveVendorProductsToCsvFile("vendorproducts.csv", productSuppliers, products, salesForceVendors, salesForceProducts)
 
 	// TODO import data to the Salesforce here
-	// TODO export Vendor Account csv file from Salesforce
+	// TODO export Accounts csv file from Salesforce
+
+	hubs := readHubs()
+
+	for _, hub := range hubs {
+		fmt.Printf("Hub %+v \n", hub)
+	}
+
+	//saveHubAccountsToCsvFile("hubaccounts.csv", hubs)
+
+	// TODO import data to the Salesforce here
+	// TODO export Accounts csv file from Salesforce
+
+	salesForceHubs := readSalesforceAccounts("migration/sandbox/accountExported.csv", recordTypeHub, "NAME")
+
+	fmt.Printf("There are %d hub accounts \n", len(salesForceHubs))
+	for key, value := range salesForceHubs {
+		fmt.Printf("Key %s  Hub %+v\n", key, value)
+	}
 
 	inventory := readInventory()
 
-	for _, value := range inventory {
-		fmt.Printf("Inventory %+v\n", value)
-	}
+	//for _, value := range inventory {
+	//	fmt.Printf("Inventory %+v\n", value)
+	//}
+
+	//saveHubsToCsvFile("hubs.csv", salesForceHubs)
 
 	salesForceVendorProducts := readSalesforceEntities("migration/sandbox/vendorProductExported.csv", "")
 
-	saveHubProductsToCsvFile("hubproducts.csv", productSuppliers, inventory, salesForceProducts, salesForceVendorProducts)
+	saveHubProductsToCsvFile("hubproducts.csv", salesForceHubs, productSuppliers, inventory, salesForceProducts, salesForceVendorProducts)
 
+}
+
+func filterUniqueProductSuppliers(productSuppliers []ProductSupplier) []ProductSupplier {
+	uniqueMap := make(map[ProductSupplierKey]bool)
+	for _, productSupplier := range productSuppliers {
+		key := ProductSupplierKey{
+			Item:       productSupplier.Item,
+			SupplierId: productSupplier.SupplierId,
+		}
+		uniqueMap[key] = true
+	}
+
+	result := make([]ProductSupplier, 0, len(uniqueMap))
+	for key := range uniqueMap {
+		result = append(result, ProductSupplier{
+			Item:         key.Item,
+			SupplierId:   key.SupplierId,
+			SupplierName: "", // SupplierName is not used for uniqueness
+		})
+	}
+	return result
 }
 
 func createDatabaseConnection() *sqlx.DB {
@@ -270,7 +323,8 @@ func readCategoryTrees() []CategoryTree {
 	return categories
 }
 
-func readProducts(db sqlx.DB) []Product {
+func readProducts() []Product {
+	db := createDatabaseConnection()
 	var products []Product
 	err := db.Select(&products, `SELECT DISTINCT ON (p.sku) p.sku,
                            p.barcode,
@@ -304,6 +358,7 @@ func readProducts(db sqlx.DB) []Product {
          					union all
          					select c.name as name, '' as subcategory_name from mgo.categories c where c.name != 'Promociones')
 							order by p.sku, category_name, subcategory_name desc;`)
+	defer db.Close()
 	if err != nil {
 		log.Fatalf("Could not read products: %v", err)
 	}
@@ -314,13 +369,24 @@ func readInventory() []Inventory {
 	db := createDatabaseConnection()
 	var inventories []Inventory
 	err := db.Select(&inventories, `select sku, store, zone, cr, price_list from mgo.products_inventory pi
-												LEFT JOIN mgo.products_inventory_stores pis on pi.store = pis._id
-												where store = '64b15d8c9f6d5bf787cd07c6'`)
+												LEFT JOIN mgo.products_inventory_stores pis on pi.store = pis._id 
+												WHERE cr is not null`)
 	if err != nil {
 		log.Fatalf("Could not read inventories: %v", err)
 	}
 	defer db.Close()
 	return inventories
+}
+
+func readHubs() []Hub {
+	db := createDatabaseConnection()
+	var hubs []Hub
+	err := db.Select(&hubs, `select _id,name,status,zone_id,cr,type from mgo.products_inventory_stores where cr is not null`)
+	if err != nil {
+		log.Fatalf("Could not read hubs: %v", err)
+	}
+	defer db.Close()
+	return hubs
 }
 
 func readBrand(db sqlx.DB, brandId string) Brand {
@@ -425,7 +491,9 @@ func readSalesforceAccounts(filename string, recordTypeId string, keyHeader stri
 	var nameColumn int
 	var idColumn int
 	var externalIdColumn int
-	var referenceTypeIColumn int
+	var referenceTypeColumn int
+	var businessNameColumn int
+	var statusColumn int
 
 	result := make(map[string]SalesForceAccount)
 
@@ -433,7 +501,7 @@ func readSalesforceAccounts(filename string, recordTypeId string, keyHeader stri
 
 		if i == 0 {
 			for u, header := range row {
-				if header == "BUSINESS_NAME__C" {
+				if header == "NAME" {
 					nameColumn = u
 				}
 				if header == "ID" {
@@ -443,17 +511,25 @@ func readSalesforceAccounts(filename string, recordTypeId string, keyHeader stri
 					externalIdColumn = u
 				}
 				if header == "RECORDTYPEID" {
-					referenceTypeIColumn = u
+					referenceTypeColumn = u
+				}
+				if header == "BUSINESS_NAME__C" {
+					businessNameColumn = u
+				}
+				if header == "STATUS__C" {
+					statusColumn = u
 				}
 			}
 
 		} else {
-			if row[referenceTypeIColumn] == recordTypeId {
+			if row[referenceTypeColumn] == recordTypeId {
 				result[row[externalIdColumn]] = SalesForceAccount{
 					ID:              row[idColumn],
 					Name:            row[nameColumn],
 					InternalId:      row[externalIdColumn],
-					ReferenceTypeId: row[referenceTypeIColumn],
+					ReferenceTypeId: row[referenceTypeColumn],
+					BusinessName:    row[businessNameColumn],
+					Status:          row[statusColumn],
 				}
 			}
 		}
@@ -531,6 +607,37 @@ func saveBrandOwnersToCsvFile(filename string, brands []Brand) {
 		dataRow[0] = brand.Name.String
 		dataRow[1] = recordTypeBrandOwner
 		//dataRow[2] = "Brand Owner"
+		writer.Write(dataRow)
+	}
+}
+
+func saveHubAccountsToCsvFile(filename string, hubs []Hub) {
+	file, err := os.Create(filename)
+	if err != nil {
+		log.Fatalf("Could not create file: %v", err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// Set the headers
+	headers := []string{"Name", "RecordTypeId", "JOKR_ENTITY__C", "DEFAULT_ORDER_CYCLE__C", "STATUS__C", "BUSINESS_NAME__C", "PARENTID"}
+	writer.Write(headers)
+
+	for _, hub := range hubs {
+		dataRow := make([]string, len(headers))
+		dataRow[0] = hub.Code
+		dataRow[1] = recordTypeHub
+		dataRow[2] = jokrEntity
+		dataRow[3] = "Every Week"
+		if hub.Status == "active" {
+			dataRow[4] = "Active"
+		} else {
+			dataRow[4] = "Inactive"
+		}
+		dataRow[5] = hub.Name
+		dataRow[6] = "001Hp00002kvRgtIAE" // MiOxxo Mexico Account
 		writer.Write(dataRow)
 	}
 }
@@ -736,7 +843,7 @@ func saveVendorProductsToCsvFile(filename string, productSuppliers []ProductSupp
 	fmt.Printf("There are %d/%d product salesForceVendors\n", i, len(productSuppliers))
 }
 
-func saveHubProductsToCsvFile(filename string, productSuppliers []ProductSupplier, inventory []Inventory, salesForceProducts map[string]SalesForceProduct, salesForceVendorProducts map[string]SalesForceEntity) {
+func saveHubProductsToCsvFile(filename string, salesforceHubs map[string]SalesForceAccount, productSuppliers []ProductSupplier, inventory []Inventory, salesForceProducts map[string]SalesForceProduct, salesForceVendorProducts map[string]SalesForceEntity) {
 	file, err := os.Create(filename)
 	if err != nil {
 		log.Fatalf("Could not create file: %v", err)
@@ -756,7 +863,7 @@ func saveHubProductsToCsvFile(filename string, productSuppliers []ProductSupplie
 	}
 
 	i := 0
-	for _, inventory := range inventory {
+	for hubCode, inventory := range inventory {
 
 		vendorProductName := fmt.Sprintf("%s - %d", inventory.Sku, uniqueVendorProductMap[inventory.Sku].SupplierId)
 
@@ -767,10 +874,12 @@ func saveHubProductsToCsvFile(filename string, productSuppliers []ProductSupplie
 		//if i < 10 {
 		dataRow := make([]string, len(headers))
 		dataRow[0] = fmt.Sprintf("%s - %d - %s", inventory.Sku, uniqueVendorProductMap[inventory.Sku].SupplierId, inventory.StoreCode)
-		dataRow[1] = "a0AHp000013OKbcMAG" // salesForceAccount[inventory.Store].ID
+		dataRow[1] = salesforceHubs[strconv.Itoa(hubCode)].ID
+		// dataRow[1] = "a0AHp000013OKbcMAG" // 5017Q
+		// dataRow[1] = salesForceAccount[inventory.Store].ID
 		dataRow[2] = salesForceVendorProducts[vendorProductName].ID
 		dataRow[3] = fmt.Sprintf("%.2f", inventory.Price/100)
-		dataRow[4] = inventory.Sku
+		dataRow[4] = fmt.Sprintf("%s - %s", "504LX", inventory.Sku)
 		dataRow[5] = salesForceProducts[inventory.Sku].ID
 		writer.Write(dataRow)
 		//}
@@ -778,6 +887,36 @@ func saveHubProductsToCsvFile(filename string, productSuppliers []ProductSupplie
 	}
 
 	fmt.Printf("There are %d/%d hub products\n", i, len(inventory))
+}
+
+func saveHubsToCsvFile(filename string, hubs map[string]SalesForceAccount) {
+	file, err := os.Create(filename)
+	if err != nil {
+		log.Fatalf("Could not create file: %v", err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// Set the headers
+	headers := []string{"Name", "JOKR_ENTITY__C", "HUB_TYPE__C", "HUB_ACCOUNT__C", "HUB_NAME__C", "REGIONAL_ACCOUNT__C", "AREA_ACCOUNT__C", "HUB_STATUS__C"}
+	writer.Write(headers)
+
+	for _, hub := range hubs {
+		dataRow := make([]string, len(headers))
+		dataRow[0] = hub.Name
+		dataRow[1] = jokrEntity
+		dataRow[2] = "Hub"
+		dataRow[3] = hub.ID
+		dataRow[4] = hub.BusinessName
+		dataRow[5] = "001Hp00002kuyTBIAY" // Customer access account
+		dataRow[6] = "001Hp00002kuyTLIAY" // Area access account
+		if hub.Status == "Active" {
+			dataRow[7] = "Active"
+		}
+		writer.Write(dataRow)
+	}
 }
 
 func getVariantFields(variant string) (string, string) {
