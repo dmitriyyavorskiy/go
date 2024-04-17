@@ -158,7 +158,7 @@ func main() {
 	////// TODO import data to the Salesforce here
 	////// TODO export Categories csv file from Salesforce
 
-	//var products = readProducts()
+	var products = readProducts()
 
 	//for _, value := range products {
 	//	fmt.Printf("Product %+v \n", value)
@@ -202,7 +202,7 @@ func main() {
 	// TODO import data to the Salesforce here
 	// TODO export Account and Product csv file from Salesforce
 
-	//salesForceVendors := readSalesforceAccounts("migration/sandbox/accountExported.csv", recordTypeVendor, "PARTNER_CODE__C")
+	salesForceVendors := readSalesforceAccounts("migration/sandbox/accountExported.csv", recordTypeVendor, "PARTNER_CODE__C")
 
 	salesForceProducts := readSalesforceProducts("migration/sandbox/productExported.csv")
 
@@ -210,38 +210,39 @@ func main() {
 	//	fmt.Printf("Key %s  Product %+v\n", key, value)
 	//}
 
-	// saveVendorProductsToCsvFile("vendorproducts.csv", productSuppliers, products, salesForceVendors, salesForceProducts)
+	saveVendorProductsToCsvFile("vendorproducts.csv", productSuppliers, products, salesForceVendors, salesForceProducts)
 
 	// TODO import data to the Salesforce here
 	// TODO export Accounts csv file from Salesforce
 
-	hubs := readHubs()
+	//hubs := readHubs()
 
-	for _, hub := range hubs {
-		fmt.Printf("Hub %+v \n", hub)
-	}
+	//for _, hub := range hubs {
+	//	fmt.Printf("Hub %+v \n", hub)
+	//}
 
 	//saveHubAccountsToCsvFile("hubaccounts.csv", hubs)
 
 	// TODO import data to the Salesforce here
 	// TODO export Accounts csv file from Salesforce
 
-	salesForceHubs := readSalesforceAccounts("migration/sandbox/accountExported.csv", recordTypeHub, "NAME")
+	salesForceHubAccounts := readSalesforceAccounts("migration/sandbox/accountExported.csv", recordTypeHub, "NAME")
 
-	fmt.Printf("There are %d hub accounts \n", len(salesForceHubs))
-	for key, value := range salesForceHubs {
-		fmt.Printf("Key %s  Hub %+v\n", key, value)
-	}
-
+	//fmt.Printf("There are %d hub accounts \n", len(salesForceHubAccounts))
+	//for key, value := range salesForceHubAccounts {
+	//	fmt.Printf("Key %s  Hub %+v\n", key, value)
+	//}
 	inventory := readInventory()
 
 	//for _, value := range inventory {
 	//	fmt.Printf("Inventory %+v\n", value)
 	//}
 
-	//saveHubsToCsvFile("hubs.csv", salesForceHubs)
+	saveHubsToCsvFile("hubs.csv", salesForceHubAccounts)
 
 	salesForceVendorProducts := readSalesforceEntities("migration/sandbox/vendorProductExported.csv", "")
+
+	salesForceHubs := readSalesforceEntities("migration/sandbox/hubExported.csv", "")
 
 	saveHubProductsToCsvFile("hubproducts.csv", salesForceHubs, productSuppliers, inventory, salesForceProducts, salesForceVendorProducts)
 
@@ -821,6 +822,8 @@ func saveVendorProductsToCsvFile(filename string, productSuppliers []ProductSupp
 
 	productsMap := convertProductsToMap(products)
 
+	uniqueNames := make(map[string]bool)
+
 	i := 0
 	for _, vendorProduct := range productSuppliers {
 		if (salesForceProducts[vendorProduct.Item] == SalesForceProduct{}) {
@@ -828,8 +831,10 @@ func saveVendorProductsToCsvFile(filename string, productSuppliers []ProductSupp
 			continue
 		}
 		//if i < 10 {
+		name := fmt.Sprintf("%s - %d", vendorProduct.Item, vendorProduct.SupplierId)
+
 		dataRow := make([]string, len(headers))
-		dataRow[0] = fmt.Sprintf("%s - %d", vendorProduct.Item, vendorProduct.SupplierId)
+		dataRow[0] = name
 		dataRow[1] = salesForceVendors[strconv.Itoa(vendorProduct.SupplierId)].ID
 		dataRow[2] = salesForceProducts[vendorProduct.Item].ID
 		dataRow[3] = "Available to Purchase"
@@ -838,12 +843,18 @@ func saveVendorProductsToCsvFile(filename string, productSuppliers []ProductSupp
 		writer.Write(dataRow)
 		i++
 		//}
+
+		if uniqueNames[name] {
+			fmt.Printf("Duplicate vendor product %s\n", name)
+		} else {
+			uniqueNames[name] = true
+		}
 	}
 
 	fmt.Printf("There are %d/%d product salesForceVendors\n", i, len(productSuppliers))
 }
 
-func saveHubProductsToCsvFile(filename string, salesforceHubs map[string]SalesForceAccount, productSuppliers []ProductSupplier, inventory []Inventory, salesForceProducts map[string]SalesForceProduct, salesForceVendorProducts map[string]SalesForceEntity) {
+func saveHubProductsToCsvFile(filename string, salesforceHubs map[string]SalesForceEntity, productSuppliers []ProductSupplier, inventory []Inventory, salesForceProducts map[string]SalesForceProduct, salesForceVendorProducts map[string]SalesForceEntity) {
 	file, err := os.Create(filename)
 	if err != nil {
 		log.Fatalf("Could not create file: %v", err)
@@ -862,24 +873,32 @@ func saveHubProductsToCsvFile(filename string, salesforceHubs map[string]SalesFo
 		uniqueVendorProductMap[vendorProduct.Item] = vendorProduct
 	}
 
+	hubSkuMap := make(map[string]Inventory)
+
 	i := 0
-	for hubCode, inventory := range inventory {
+	for _, inventory := range inventory {
 
 		vendorProductName := fmt.Sprintf("%s - %d", inventory.Sku, uniqueVendorProductMap[inventory.Sku].SupplierId)
+		hubSku := fmt.Sprintf("%s - %s", inventory.StoreCode, inventory.Sku)
 
 		if (salesForceVendorProducts[vendorProductName] == SalesForceEntity{}) {
 			fmt.Printf("Vendor Product %s not found %+v\n", vendorProductName, inventory)
 			continue
 		}
-		//if i < 10 {
+
+		if (hubSkuMap[hubSku] != Inventory{}) {
+			fmt.Printf("Duplicated Hub Product %s not found %+v\n", hubSku, inventory)
+			continue
+		}
+		hubSkuMap[hubSku] = inventory
+
+		//if i >= 20 {
 		dataRow := make([]string, len(headers))
 		dataRow[0] = fmt.Sprintf("%s - %d - %s", inventory.Sku, uniqueVendorProductMap[inventory.Sku].SupplierId, inventory.StoreCode)
-		dataRow[1] = salesforceHubs[strconv.Itoa(hubCode)].ID
-		// dataRow[1] = "a0AHp000013OKbcMAG" // 5017Q
-		// dataRow[1] = salesForceAccount[inventory.Store].ID
+		dataRow[1] = salesforceHubs[inventory.StoreCode].ID
 		dataRow[2] = salesForceVendorProducts[vendorProductName].ID
 		dataRow[3] = fmt.Sprintf("%.2f", inventory.Price/100)
-		dataRow[4] = fmt.Sprintf("%s - %s", "504LX", inventory.Sku)
+		dataRow[4] = hubSku
 		dataRow[5] = salesForceProducts[inventory.Sku].ID
 		writer.Write(dataRow)
 		//}
@@ -912,7 +931,7 @@ func saveHubsToCsvFile(filename string, hubs map[string]SalesForceAccount) {
 		dataRow[4] = hub.BusinessName
 		dataRow[5] = "001Hp00002kuyTBIAY" // Customer access account
 		dataRow[6] = "001Hp00002kuyTLIAY" // Area access account
-		if hub.Status == "Active" {
+		if strings.EqualFold(hub.Status, "Active") {
 			dataRow[7] = "Active"
 		}
 		writer.Write(dataRow)
