@@ -17,14 +17,18 @@ import (
 )
 
 const (
+	environment = "test"
 	// PostgreSQL connection string
-	psqlInfo             = "host=mioxxo-products.ce989v8mdple.us-east-1.rds.amazonaws.com port=5432 user=postgres dbname=products password=Yk9deWhjbYUUR5LEF8SnMf7w9jghPf sslmode=disable"
-	recordTypeBrandOwner = "012Hp000001mPmGIAU"
-	recordTypeBrand      = "012Hp000001mPmEIAU"
-	recordTypeVendor     = "012Hp000001mPmDIAU"
-	recordTypeHub        = "012Hp000001mPmBIAU"
-	jokrEntity           = "001Hp00002kvRgtIAE"
-	integrationOfBtlr    = "005Hp00000igLP3IAM"
+	psqlInfo              = "host=mioxxo-products.ce989v8mdple.us-east-1.rds.amazonaws.com port=5432 user=postgres dbname=products password=Yk9deWhjbYUUR5LEF8SnMf7w9jghPf sslmode=disable"
+	recordTypeEntity      = "012Hp000001mPmCIAU"
+	recordTypeBrandOwner  = "012Hp000001mPmGIAU"
+	recordTypeBrand       = "012Hp000001mPmEIAU"
+	recordTypeVendor      = "012Hp000001mPmDIAU"
+	recordTypeHub         = "012Hp000001mPmBIAU"
+	jokrEntity            = "001D400000p9IxFIAU" // "001Hp00002kvRgtIAE"
+	customerAccessAccount = "001D400000p9LdVIAU" // "001Hp00002kuyTBIAY"
+	areaAccessAccount     = "001D400000p9LdWIAU"
+	integrationOfBtlr     = "005Hp00000igLP3IAM"
 )
 
 var brandsMap = make(map[string]Brand)
@@ -38,6 +42,21 @@ type ProductSupplier struct {
 	Item         string
 	SupplierId   int
 	SupplierName string
+}
+
+type Store struct {
+	Name       string
+	Code       string
+	Id         string
+	Plaza      string
+	Address    string
+	PostalCode string
+	City       string
+	State      string
+	Latitude   string
+	Longitude  string
+	Surface    string
+	Area       string
 }
 
 type ProductSupplierKey struct {
@@ -102,6 +121,13 @@ type Tax struct {
 	Withholding bool   `json:"withholding"`
 }
 
+type TaxRate struct {
+	Name      string
+	Rate      string
+	Type      string
+	Secondary bool
+}
+
 type Product struct {
 	Sku              string         `db:"sku"`
 	Barcode          sql.NullString `db:"barcode"`
@@ -141,8 +167,8 @@ func main() {
 
 	//// TODO import data to the Salesforce here
 	//// TODO export Brands csv file from Salesforce
-	//
-	//brandOwners := readSalesforceEntities("migration/sandbox/brandExported.csv", recordTypeBrandOwner)
+
+	//brandOwners := readSalesforceEntities(fmt.Sprintf("migration/%s/brandExported.csv", environment), recordTypeBrandOwner)
 	//for key, value := range brandOwners {
 	//	fmt.Printf("Key '%s' Brand owner %+v\n", key, value)
 	//}
@@ -155,97 +181,155 @@ func main() {
 	//var categoryTrees = readCategoryTrees()
 	//saveCategoriesToCsvFile("categories.csv", categoryTrees)
 
+	//saveUtilityEntitiesToCsvFile("utilityEntities.csv")
+
 	////// TODO import data to the Salesforce here
 	////// TODO export Categories csv file from Salesforce
 
-	var products = readProducts()
+	//taxRates := readTaxRates()
+	//saveTaxRatesToCsvFile("taxrates.csv", taxRates)
 
+	// TODO import data to the Salesforce here
+	// TODO export Tax Rates csv file from Salesforce
+
+	//var products = readProducts()
+	//
 	//for _, value := range products {
 	//	fmt.Printf("Product %+v \n", value)
 	//}
 	//
+	//categories := readSalesforceCategories(fmt.Sprintf("migration/%s/categoryExported.csv", environment))
+	//for key, value := range categories {
+	//	if strings.Contains(value.Name, "Oxxo: ") {
+	//		fmt.Printf("Key '%s' CategoryTree %+v\n", key, value)
+	//	}
+	//}
 	//
-	//categories := readSalesforceCategories("migration/sandbox/categoryExported.csv")
-	////for key, value := range categories {
-	////	if strings.Contains(value.Name, "Oxxo: ") {
-	////		fmt.Printf("Key '%s' CategoryTree %+v\n", key, value)
-	////	}
-	////}
+	//brands := readSalesforceEntities(fmt.Sprintf("migration/%s/brandExported.csv", environment), recordTypeBrand)
+	//for key, value := range brands {
+	//	fmt.Printf("Key '%s' Brand %+v\n", key, value)
+	//}
 	//
-	//brands := readSalesforceEntities("migration/sandbox/brandExported.csv", recordTypeBrand)
-	////for key, value := range brands {
-	////	fmt.Printf("Key '%s' Brand %+v\n", key, value)
-	////}
-	//
-	//taxRates := readSalesforceEntities("migration/sandbox/taxRateExported.csv", "")
+	//taxRates := readSalesforceEntities(fmt.Sprintf("migration/%s/taxRateExported.csv", environment), "")
 	//for key, value := range taxRates {
 	//	fmt.Printf("Key '%s' Tax Rate %+v\n", key, value)
 	//}
 	//
 	//saveProductsToCsvFile("products.csv", products, taxRates, brands, categories)
 
-	productSuppliers, suppliers := readSuppliers()
-
-	productSuppliers = filterUniqueProductSuppliers(productSuppliers)
-
+	//productSuppliers, suppliers := readSuppliers()
+	//
+	//productSuppliers = filterUniqueProductSuppliers(productSuppliers)
+	//
 	//for _, value := range productSuppliers {
 	//	fmt.Printf("Product suppliers %+v\n", value)
 	//}
 	//
-	for key, value := range suppliers {
-		fmt.Printf("Supplier Key %+v Value %+v\n", key, value)
-	}
+	//for key, value := range suppliers {
+	//	fmt.Printf("Supplier Key %+v Value %+v\n", key, value)
+	//}
+	//
+	//saveVendorsToCsvFile("vendors.csv", suppliers)
 
 	//_, suppliers := readSuppliers()
-	//saveVendorsToCsvFile("vendors.csv", suppliers)
 
 	// TODO import data to the Salesforce here
 	// TODO export Account and Product csv file from Salesforce
 
-	salesForceVendors := readSalesforceAccounts("migration/sandbox/accountExported.csv", recordTypeVendor, "PARTNER_CODE__C")
-
-	salesForceProducts := readSalesforceProducts("migration/sandbox/productExported.csv")
-
+	//salesForceVendors := readSalesforceAccounts(fmt.Sprintf("migration/%s/accountExported.csv", environment), recordTypeVendor, "PARTNER_CODE__C")
+	//
+	//salesForceProducts := readSalesforceProducts(fmt.Sprintf("migration/%s/productExported.csv", environment))
+	//
 	//for key, value := range products {
 	//	fmt.Printf("Key %s  Product %+v\n", key, value)
 	//}
-
-	saveVendorProductsToCsvFile("vendorproducts.csv", productSuppliers, products, salesForceVendors, salesForceProducts)
-
-	// TODO import data to the Salesforce here
-	// TODO export Accounts csv file from Salesforce
-
-	//hubs := readHubs()
-
-	//for _, hub := range hubs {
-	//	fmt.Printf("Hub %+v \n", hub)
-	//}
-
-	//saveHubAccountsToCsvFile("hubaccounts.csv", hubs)
+	//
+	productSuppliers, _ := readSuppliers()
+	productSuppliers = filterUniqueProductSuppliers(productSuppliers)
+	//saveVendorProductsToCsvFile("vendorproducts.csv", productSuppliers, products, salesForceVendors, salesForceProducts)
 
 	// TODO import data to the Salesforce here
 	// TODO export Accounts csv file from Salesforce
 
-	salesForceHubAccounts := readSalesforceAccounts("migration/sandbox/accountExported.csv", recordTypeHub, "NAME")
+	hubs := readHubs()
 
+	for _, hub := range hubs {
+		fmt.Printf("Hub %+v \n", hub)
+	}
+
+	_, storesMap := readStores()
+	for key, store := range storesMap {
+		fmt.Printf("Key %s Store %+v \n", key, store)
+	}
+
+	//saveHubAccountsToCsvFile("hubaccounts.csv", hubs, storesMap)
+
+	// TODO import data to the Salesforce here
+	// TODO export Accounts csv file from Salesforce
+
+	salesForceHubAccounts := readSalesforceAccounts(fmt.Sprintf("migration/%s/accountExported.csv", environment), recordTypeHub, "NAME")
+
+	//
 	//fmt.Printf("There are %d hub accounts \n", len(salesForceHubAccounts))
 	//for key, value := range salesForceHubAccounts {
 	//	fmt.Printf("Key %s  Hub %+v\n", key, value)
 	//}
-	inventory := readInventory()
+	//inventory := readInventory()
 
 	//for _, value := range inventory {
 	//	fmt.Printf("Inventory %+v\n", value)
 	//}
 
-	saveHubsToCsvFile("hubs.csv", salesForceHubAccounts)
+	//saveHubsToCsvFile("hubs.csv", salesForceHubAccounts, storesMap)
 
-	salesForceVendorProducts := readSalesforceEntities("migration/sandbox/vendorProductExported.csv", "")
+	//salesForceVendorProducts := readSalesforceEntities(fmt.Sprintf("migration/%s/vendorProductExported.csv", environment), "")
+	salesForceHubs := readSalesforceEntities(fmt.Sprintf("migration/%s/hubExported.csv", environment), "")
+	//saveHubProductsToCsvFile("hubproducts.csv", salesForceHubs, productSuppliers, inventory, salesForceProducts, salesForceVendorProducts)
 
-	salesForceHubs := readSalesforceEntities("migration/sandbox/hubExported.csv", "")
+	updateHubAccountsToCsvFile("hubaccounts-update.csv", salesForceHubAccounts, storesMap)
+	updateHubToCsvFile("hubs-update.csv", salesForceHubs, storesMap)
 
-	saveHubProductsToCsvFile("hubproducts.csv", salesForceHubs, productSuppliers, inventory, salesForceProducts, salesForceVendorProducts)
+}
 
+func readTaxRates() []TaxRate {
+	result := make([]TaxRate, 0)
+	result = append(result, TaxRate{
+		Name:      "IVA0",
+		Rate:      "0.0",
+		Type:      "IVA",
+		Secondary: false,
+	})
+	result = append(result, TaxRate{
+		Name:      "IVA16",
+		Rate:      "16.0",
+		Type:      "IVA",
+		Secondary: false,
+	})
+	result = append(result, TaxRate{
+		Name:      "IEPS0",
+		Rate:      "0.0",
+		Type:      "IEPS",
+		Secondary: true,
+	})
+	result = append(result, TaxRate{
+		Name:      "IEPS8",
+		Rate:      "8.0",
+		Type:      "IEPS",
+		Secondary: true,
+	})
+	result = append(result, TaxRate{
+		Name:      "IEPS25",
+		Rate:      "25.0",
+		Type:      "IEPS",
+		Secondary: true,
+	})
+	result = append(result, TaxRate{
+		Name:      "IEPS53",
+		Rate:      "53.0",
+		Type:      "IEPS",
+		Secondary: true,
+	})
+	return result
 }
 
 func filterUniqueProductSuppliers(productSuppliers []ProductSupplier) []ProductSupplier {
@@ -416,7 +500,7 @@ func readSalesforceEntities(filename string, recordTypeId string) map[string]Sal
 				if header == "NAME" {
 					nameColumn = u
 				}
-				if header == "ID" {
+				if strings.EqualFold(header, "Id") {
 					idColumn = u
 				}
 				if header == "RECORDTYPEID" {
@@ -425,7 +509,7 @@ func readSalesforceEntities(filename string, recordTypeId string) map[string]Sal
 			}
 
 			fmt.Printf("Name column index %v\n", nameColumn)
-			fmt.Printf("ID column index %v\n", idColumn)
+			fmt.Printf("Id column index %v\n", idColumn)
 			fmt.Printf("Reference type id column index %v\n", referenceTypeIColumn)
 
 		} else {
@@ -463,7 +547,7 @@ func readSalesforceCategories(filename string) map[string]SalesForceCategory {
 				if header == "CATEGORY_GROUP__C" {
 					nameColumn = u
 				}
-				if header == "ID" {
+				if header == "Id" {
 					idColumn = u
 				}
 				if header == "CATEGORY_LEVEL_1__C" {
@@ -505,7 +589,7 @@ func readSalesforceAccounts(filename string, recordTypeId string, keyHeader stri
 				if header == "NAME" {
 					nameColumn = u
 				}
-				if header == "ID" {
+				if strings.EqualFold(header, "Id") {
 					idColumn = u
 				}
 				if header == keyHeader {
@@ -553,7 +637,7 @@ func readSalesforceProducts(filename string) map[string]SalesForceProduct {
 				if header == "NAME" {
 					nameColumn = u
 				}
-				if header == "ID" {
+				if header == "Id" {
 					idColumn = u
 				}
 				if header == "SKU__C" {
@@ -589,6 +673,44 @@ func getDataFromFile(filename string) [][]string {
 	return data
 }
 
+func saveUtilityEntitiesToCsvFile(filename string) {
+	file, err := os.Create(filename)
+	if err != nil {
+		log.Fatalf("Could not create file: %v", err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// Set the headers
+	headers := []string{"Name", "BILLINGCOUNTRY", "SHIPPINGCOUNTRY", "RecordTypeId"}
+	writer.Write(headers)
+
+	var dataRow []string
+
+	dataRow = make([]string, len(headers))
+	dataRow[0] = "MiOXXO Mexico"
+	dataRow[1] = "Mexico"
+	dataRow[2] = "Mexico"
+	dataRow[3] = recordTypeEntity
+	writer.Write(dataRow)
+
+	dataRow = make([]string, len(headers))
+	dataRow[0] = "CustomerSuccessAccount"
+	dataRow[1] = "Mexico"
+	dataRow[2] = "Mexico"
+	dataRow[3] = recordTypeEntity
+	writer.Write(dataRow)
+
+	dataRow = make([]string, len(headers))
+	dataRow[0] = "Area Account"
+	dataRow[1] = "Mexico"
+	dataRow[2] = "Mexico"
+	dataRow[3] = recordTypeEntity
+	writer.Write(dataRow)
+}
+
 func saveBrandOwnersToCsvFile(filename string, brands []Brand) {
 	file, err := os.Create(filename)
 	if err != nil {
@@ -612,7 +734,7 @@ func saveBrandOwnersToCsvFile(filename string, brands []Brand) {
 	}
 }
 
-func saveHubAccountsToCsvFile(filename string, hubs []Hub) {
+func saveHubAccountsToCsvFile(filename string, hubs []Hub, stores map[string]Store) {
 	file, err := os.Create(filename)
 	if err != nil {
 		log.Fatalf("Could not create file: %v", err)
@@ -623,7 +745,8 @@ func saveHubAccountsToCsvFile(filename string, hubs []Hub) {
 	defer writer.Flush()
 
 	// Set the headers
-	headers := []string{"Name", "RecordTypeId", "JOKR_ENTITY__C", "DEFAULT_ORDER_CYCLE__C", "STATUS__C", "BUSINESS_NAME__C", "PARENTID"}
+	headers := []string{"Name", "RecordTypeId", "JOKR_ENTITY__C", "DEFAULT_ORDER_CYCLE__C", "STATUS__C", "BUSINESS_NAME__C", "PARENTID", "COUNTRY__C",
+		"BILLINGCITY", "BILLINGCOUNTRY", "BILLINGPOSTALCODE", "BILLINGSTATE", "BILLINGSTREET", "SHIPPINGCITY", "SHIPPINGCOUNTRY", "SHIPPINGPOSTALCODE", "SHIPPINGSTATE", "SHIPPINGSTREET"}
 	writer.Write(headers)
 
 	for _, hub := range hubs {
@@ -638,7 +761,53 @@ func saveHubAccountsToCsvFile(filename string, hubs []Hub) {
 			dataRow[4] = "Inactive"
 		}
 		dataRow[5] = hub.Name
-		dataRow[6] = "001Hp00002kvRgtIAE" // MiOxxo Mexico Account
+		dataRow[6] = jokrEntity // MiOxxo Mexico Account
+		dataRow[7] = "Mexico"
+		dataRow[8] = stores[hub.Code].City
+		dataRow[9] = "Mexico"
+		dataRow[10] = stores[hub.Code].PostalCode
+		dataRow[11] = stores[hub.Code].State
+		dataRow[12] = stores[hub.Code].Address
+		dataRow[13] = stores[hub.Code].City
+		dataRow[14] = "Mexico"
+		dataRow[15] = stores[hub.Code].PostalCode
+		dataRow[16] = stores[hub.Code].State
+		dataRow[17] = stores[hub.Code].Address
+		writer.Write(dataRow)
+	}
+}
+
+func updateHubAccountsToCsvFile(filename string, hubs map[string]SalesForceAccount, stores map[string]Store) {
+	file, err := os.Create(filename)
+	if err != nil {
+		log.Fatalf("Could not create file: %v", err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// Set the headers
+	headers := []string{"ID", "NAME", "COUNTRY__C", "BILLINGCITY", "BILLINGCOUNTRY", "BILLINGPOSTALCODE", "BILLINGSTATE", "BILLINGSTREET", "SHIPPINGCITY", "SHIPPINGCOUNTRY", "SHIPPINGPOSTALCODE", "SHIPPINGSTATE", "SHIPPINGSTREET", "STATE_REGISTRATION__C", "CITY_REGISTRATION__C"}
+	writer.Write(headers)
+
+	for key, hub := range hubs {
+		dataRow := make([]string, len(headers))
+		dataRow[0] = hub.ID
+		dataRow[1] = hub.Name
+		//dataRow[2] = "Mexico"
+		dataRow[3] = stores[key].City
+		dataRow[4] = "Mexico"
+		dataRow[5] = stores[key].PostalCode
+		dataRow[6] = stores[key].State
+		dataRow[7] = stores[key].Address
+		dataRow[8] = stores[key].City
+		dataRow[9] = "Mexico"
+		dataRow[10] = stores[key].PostalCode
+		dataRow[11] = stores[key].State
+		dataRow[12] = stores[key].Address
+		dataRow[13] = stores[key].State
+		dataRow[14] = stores[key].City
 		writer.Write(dataRow)
 	}
 }
@@ -683,12 +852,47 @@ func saveCategoriesToCsvFile(filename string, categories []CategoryTree) {
 
 	for _, category := range categories {
 		dataRow := make([]string, len(headers))
-		dataRow[0] = "Oxxo: " + clearNameForExport(category.Name.String)
-		dataRow[1] = "Oxxo: " + clearNameForExport(category.Name.String)
+		//dataRow[0] = "Oxxo: " + clearNameForExport(category.Name.String)
+		//dataRow[1] = "Oxxo: " + clearNameForExport(category.Name.String)
+		dataRow[0] = clearNameForExport(category.Name.String)
+		dataRow[1] = clearNameForExport(category.Name.String)
 		dataRow[2] = clearNameForExport(category.Name.String)
 		dataRow[3] = clearNameForExport(category.CategoryName.String)
 
 		fmt.Printf("Writing category %+v\n from %+v\n", dataRow, category)
+
+		writer.Write(dataRow)
+	}
+}
+
+func saveTaxRatesToCsvFile(filename string, taxRates []TaxRate) {
+	file, err := os.Create(filename)
+	if err != nil {
+		log.Fatalf("Could not create file: %v", err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// Set the headers
+	headers := []string{"NAME", "NAME__C", "Country__c", "PERCENTAGE__C", "SECONDARY_TAX__C", "JOKR_ENTITY__C"}
+	writer.Write(headers)
+
+	for _, taxRate := range taxRates {
+		dataRow := make([]string, len(headers))
+		dataRow[0] = taxRate.Name
+		dataRow[1] = taxRate.Name
+		dataRow[2] = "Mexico"
+		dataRow[3] = taxRate.Rate
+		if taxRate.Secondary {
+			dataRow[4] = "TRUE"
+		} else {
+			dataRow[4] = "FALSE"
+		}
+		dataRow[5] = jokrEntity
+
+		fmt.Printf("Writing Tax Rate %+v\n from %+v\n", dataRow, taxRate)
 
 		writer.Write(dataRow)
 	}
@@ -773,8 +977,10 @@ func saveVendorsToCsvFile(filename string, vendors map[int]ProductSupplier) {
 
 	// Set the headers
 	headers := []string{"Name", "Business_name__C", "RecordTypeId", "JOKR_Entity__c", "Portal_url__c", "Status__c", "Spot_Buy_Vendor__c", "Commercial_Owner__c", "PO_Reception_Method__c", "Finance_contact_email__c",
-		"Finance_contact_full_name__c", "Finance_contact_phone__c", "Default_delivery_time_setting__c", "Default_lead_time__c", "Country__c", "Partner_code__c", "Location_scope__c"}
+		"Finance_contact_full_name__c", "Finance_contact_phone__c", "Default_delivery_time_setting__c", "Default_lead_time__c", "Country__c", "Partner_code__c", "Location_scope__c", "BILLINGCOUNTRY", "SHIPPINGCOUNTRY"}
 	writer.Write(headers)
+
+	uniqueVendorNames := make(map[string]bool)
 
 	i := 0
 	for _, vendor := range vendors {
@@ -782,9 +988,19 @@ func saveVendorsToCsvFile(filename string, vendors map[int]ProductSupplier) {
 		//	continue
 		//}
 		//if i < 10 {
+		name := strings.ReplaceAll(vendor.SupplierName, ",", ".")
+
+		if uniqueVendorNames[name] {
+			newName := fmt.Sprintf("%s - %d", name, vendor.SupplierId)
+			fmt.Printf("Duplicate vendor name %s Name will be %s\n", name, newName)
+			name = newName
+		} else {
+			uniqueVendorNames[name] = true
+		}
+
 		dataRow := make([]string, len(headers))
-		dataRow[0] = strings.ReplaceAll(vendor.SupplierName, ",", ".")
-		dataRow[1] = strings.ReplaceAll(vendor.SupplierName, ",", ".")
+		dataRow[0] = name
+		dataRow[1] = name
 		dataRow[2] = recordTypeVendor
 		dataRow[3] = jokrEntity                        // JOKR_Entity__с
 		dataRow[5] = "Active"                          // status__c
@@ -799,9 +1015,12 @@ func saveVendorsToCsvFile(filename string, vendors map[int]ProductSupplier) {
 		//dataRow[14] = "Mexico"                             // Country__c
 		dataRow[15] = fmt.Sprintf("%d", vendor.SupplierId) // Partner_code__c
 		dataRow[16] = "Country-wide"                       // Location_scope__c
+		dataRow[17] = "Mexico"
+		dataRow[18] = "Mexico"
 
 		writer.Write(dataRow)
 		i++
+
 		//}
 	}
 }
@@ -908,7 +1127,7 @@ func saveHubProductsToCsvFile(filename string, salesforceHubs map[string]SalesFo
 	fmt.Printf("There are %d/%d hub products\n", i, len(inventory))
 }
 
-func saveHubsToCsvFile(filename string, hubs map[string]SalesForceAccount) {
+func saveHubsToCsvFile(filename string, hubs map[string]SalesForceAccount, stores map[string]Store) {
 	file, err := os.Create(filename)
 	if err != nil {
 		log.Fatalf("Could not create file: %v", err)
@@ -919,7 +1138,8 @@ func saveHubsToCsvFile(filename string, hubs map[string]SalesForceAccount) {
 	defer writer.Flush()
 
 	// Set the headers
-	headers := []string{"Name", "JOKR_ENTITY__C", "HUB_TYPE__C", "HUB_ACCOUNT__C", "HUB_NAME__C", "REGIONAL_ACCOUNT__C", "AREA_ACCOUNT__C", "HUB_STATUS__C"}
+	headers := []string{"Name", "JOKR_ENTITY__C", "HUB_TYPE__C", "HUB_ACCOUNT__C", "HUB_NAME__C", "REGIONAL_ACCOUNT__C", "AREA_ACCOUNT__C", "HUB_STATUS__C", "HUB_COUNTRY__C", "HUB_CITY__C", "HUB_GEOLOCATION__LATITUDE__S", "HUB_GEOLOCATION__LONGITUDE__S",
+		"HUB_POSTAL_CODE__C", "HUB_STATE__C", "HUB_STREET__C"}
 	writer.Write(headers)
 
 	for _, hub := range hubs {
@@ -929,11 +1149,48 @@ func saveHubsToCsvFile(filename string, hubs map[string]SalesForceAccount) {
 		dataRow[2] = "Hub"
 		dataRow[3] = hub.ID
 		dataRow[4] = hub.BusinessName
-		dataRow[5] = "001Hp00002kuyTBIAY" // Customer access account
-		dataRow[6] = "001Hp00002kuyTLIAY" // Area access account
+		dataRow[5] = customerAccessAccount // Customer access account
+		dataRow[6] = areaAccessAccount     // Area access account
 		if strings.EqualFold(hub.Status, "Active") {
 			dataRow[7] = "Active"
+		} else {
 		}
+		dataRow[8] = "Mexico"
+		dataRow[9] = stores[hub.Name].City
+		dataRow[10] = stores[hub.Name].Latitude
+		dataRow[11] = stores[hub.Name].Longitude
+		dataRow[12] = stores[hub.Name].PostalCode
+		dataRow[13] = stores[hub.Name].State
+		dataRow[14] = stores[hub.Name].Address
+		writer.Write(dataRow)
+	}
+}
+
+func updateHubToCsvFile(filename string, hubs map[string]SalesForceEntity, stores map[string]Store) {
+	file, err := os.Create(filename)
+	if err != nil {
+		log.Fatalf("Could not create file: %v", err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// Set the headers
+	headers := []string{"ID", "Name", "HUB_COUNTRY__C", "HUB_CITY__C", "HUB_GEOLOCATION__LATITUDE__S", "HUB_GEOLOCATION__LONGITUDE__S", "HUB_POSTAL_CODE__C", "HUB_STATE__C", "HUB_STREET__C"}
+	writer.Write(headers)
+
+	for _, hub := range hubs {
+		dataRow := make([]string, len(headers))
+		dataRow[0] = hub.ID
+		dataRow[1] = hub.Name
+		dataRow[2] = "Mexico"
+		dataRow[3] = stores[hub.Name].City
+		dataRow[4] = stores[hub.Name].Latitude
+		dataRow[5] = stores[hub.Name].Longitude
+		dataRow[6] = stores[hub.Name].PostalCode
+		dataRow[7] = stores[hub.Name].State
+		dataRow[8] = stores[hub.Name].Address
 		writer.Write(dataRow)
 	}
 }
@@ -1132,4 +1389,61 @@ func readSuppliers() ([]ProductSupplier, map[int]ProductSupplier) {
 	fmt.Printf("There are %d unique suppliers\n", len(suppliersMap))
 
 	return suppliers, suppliersMap
+}
+
+func readStores() ([]Store, map[string]Store) {
+	f, err := excelize.OpenFile("migration/Stores.xlsx")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	rows, err := f.GetRows("MFCs")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var stores []Store
+	storesMap := make(map[string]Store)
+	for i, row := range rows {
+		if i <= 1 {
+			continue
+		}
+		storeId := row[1]
+		address := strings.Split(row[5], ",")
+
+		fmt.Printf("Address is %s Size %d \n", address, len(address))
+
+		var store Store
+
+		if len(address) > 4 {
+			store = Store{
+				Name:       row[0],
+				Code:       storeId,
+				Id:         row[2],
+				Plaza:      row[3],
+				Address:    strings.TrimSpace(address[0] + " " + address[1]),
+				PostalCode: strings.TrimSpace(strings.ReplaceAll(address[2], "C.P. ", "")),
+				City:       strings.TrimSpace(address[3]),
+				State:      strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(address[4], "N.L.", "Nuevo León"), "N.L", "Nuevo León")),
+				Latitude:   row[7],
+				Longitude:  row[8],
+				Surface:    row[9],
+				Area:       row[10],
+			}
+		} else {
+			store = Store{
+				Name:  row[0],
+				Code:  storeId,
+				Id:    row[2],
+				Plaza: row[3],
+			}
+		}
+		stores = append(stores, store)
+		storesMap[storeId] = store
+	}
+
+	fmt.Printf("There are %d rows\n", len(rows))
+	fmt.Printf("There are %d unique stortes\n", len(storesMap))
+
+	return stores, storesMap
 }

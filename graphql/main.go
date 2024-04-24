@@ -49,7 +49,7 @@ func main() {
 	//		}
 	//`)
 	request := graphql.NewRequest(`
-	query hubById ($id: ID!) {
+	query hubById ($id: Id!) {
 		hubById (id: $id) {
 			id
 			dakiPlusHubId
