@@ -34,6 +34,7 @@ const (
 var brandsMap = make(map[string]models.Brand)
 
 func main() {
+
 	//var brands = readBrands()
 	//saveBrandOwnersToCsvFile("brandowners.csv", brands)
 
