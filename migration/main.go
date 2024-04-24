@@ -33,29 +33,6 @@ const (
 
 var brandsMap = make(map[string]models.Brand)
 
-type ProductChild struct {
-	Sku      string
-	Quantity string
-}
-
-type ProductSupplier struct {
-	Item         string
-	SupplierId   int
-	SupplierName string
-}
-
-type ProductSupplierKey struct {
-	Item       string
-	SupplierId int
-}
-
-type TaxRate struct {
-	Name      string
-	Rate      string
-	Type      string
-	Secondary bool
-}
-
 func main() {
 	//var brands = readBrands()
 	//saveBrandOwnersToCsvFile("brandowners.csv", brands)
@@ -186,39 +163,39 @@ func main() {
 
 }
 
-func readTaxRates() []TaxRate {
-	result := make([]TaxRate, 0)
-	result = append(result, TaxRate{
+func readTaxRates() []models.TaxRate {
+	result := make([]models.TaxRate, 0)
+	result = append(result, models.TaxRate{
 		Name:      "IVA0",
 		Rate:      "0.0",
 		Type:      "IVA",
 		Secondary: false,
 	})
-	result = append(result, TaxRate{
+	result = append(result, models.TaxRate{
 		Name:      "IVA16",
 		Rate:      "16.0",
 		Type:      "IVA",
 		Secondary: false,
 	})
-	result = append(result, TaxRate{
+	result = append(result, models.TaxRate{
 		Name:      "IEPS0",
 		Rate:      "0.0",
 		Type:      "IEPS",
 		Secondary: true,
 	})
-	result = append(result, TaxRate{
+	result = append(result, models.TaxRate{
 		Name:      "IEPS8",
 		Rate:      "8.0",
 		Type:      "IEPS",
 		Secondary: true,
 	})
-	result = append(result, TaxRate{
+	result = append(result, models.TaxRate{
 		Name:      "IEPS25",
 		Rate:      "25.0",
 		Type:      "IEPS",
 		Secondary: true,
 	})
-	result = append(result, TaxRate{
+	result = append(result, models.TaxRate{
 		Name:      "IEPS53",
 		Rate:      "53.0",
 		Type:      "IEPS",
@@ -227,19 +204,19 @@ func readTaxRates() []TaxRate {
 	return result
 }
 
-func filterUniqueProductSuppliers(productSuppliers []ProductSupplier) []ProductSupplier {
-	uniqueMap := make(map[ProductSupplierKey]bool)
+func filterUniqueProductSuppliers(productSuppliers []models.ProductSupplier) []models.ProductSupplier {
+	uniqueMap := make(map[models.ProductSupplierKey]bool)
 	for _, productSupplier := range productSuppliers {
-		key := ProductSupplierKey{
+		key := models.ProductSupplierKey{
 			Item:       productSupplier.Item,
 			SupplierId: productSupplier.SupplierId,
 		}
 		uniqueMap[key] = true
 	}
 
-	result := make([]ProductSupplier, 0, len(uniqueMap))
+	result := make([]models.ProductSupplier, 0, len(uniqueMap))
 	for key := range uniqueMap {
-		result = append(result, ProductSupplier{
+		result = append(result, models.ProductSupplier{
 			Item:         key.Item,
 			SupplierId:   key.SupplierId,
 			SupplierName: "", // SupplierName is not used for uniqueness
@@ -760,7 +737,7 @@ func saveCategoriesToCsvFile(filename string, categories []models.CategoryTree) 
 	}
 }
 
-func saveTaxRatesToCsvFile(filename string, taxRates []TaxRate) {
+func saveTaxRatesToCsvFile(filename string, taxRates []models.TaxRate) {
 	file, err := os.Create(filename)
 	if err != nil {
 		log.Fatalf("Could not create file: %v", err)
@@ -860,7 +837,7 @@ func saveProductsToCsvFile(filename string, products []models.Product, taxRates 
 	}
 }
 
-func saveVendorsToCsvFile(filename string, vendors map[int]ProductSupplier) {
+func saveVendorsToCsvFile(filename string, vendors map[int]models.ProductSupplier) {
 	file, err := os.Create(filename)
 	if err != nil {
 		log.Fatalf("Could not create file: %v", err)
@@ -920,7 +897,7 @@ func saveVendorsToCsvFile(filename string, vendors map[int]ProductSupplier) {
 	}
 }
 
-func saveVendorProductsToCsvFile(filename string, productSuppliers []ProductSupplier, products []models.Product, salesForceVendors map[string]models.SalesForceAccount, salesForceProducts map[string]models.SalesForceProduct) {
+func saveVendorProductsToCsvFile(filename string, productSuppliers []models.ProductSupplier, products []models.Product, salesForceVendors map[string]models.SalesForceAccount, salesForceProducts map[string]models.SalesForceProduct) {
 	file, err := os.Create(filename)
 	if err != nil {
 		log.Fatalf("Could not create file: %v", err)
@@ -968,7 +945,7 @@ func saveVendorProductsToCsvFile(filename string, productSuppliers []ProductSupp
 	fmt.Printf("There are %d/%d product salesForceVendors\n", i, len(productSuppliers))
 }
 
-func saveHubProductsToCsvFile(filename string, salesforceHubs map[string]models.SalesForceEntity, productSuppliers []ProductSupplier, inventory []models.Inventory, salesForceProducts map[string]models.SalesForceProduct, salesForceVendorProducts map[string]models.SalesForceEntity) {
+func saveHubProductsToCsvFile(filename string, salesforceHubs map[string]models.SalesForceEntity, productSuppliers []models.ProductSupplier, inventory []models.Inventory, salesForceProducts map[string]models.SalesForceProduct, salesForceVendorProducts map[string]models.SalesForceEntity) {
 	file, err := os.Create(filename)
 	if err != nil {
 		log.Fatalf("Could not create file: %v", err)
@@ -982,7 +959,7 @@ func saveHubProductsToCsvFile(filename string, salesforceHubs map[string]models.
 	headers := []string{"Name", "HUB__C", "MAIN_VENDOR_PRODUCT__C", "RETAIL_PRICE__C", "HUB_SKU_TEXT__C", "PRODUCT__C"}
 	writer.Write(headers)
 
-	uniqueVendorProductMap := make(map[string]ProductSupplier)
+	uniqueVendorProductMap := make(map[string]models.ProductSupplier)
 	for _, vendorProduct := range productSuppliers {
 		uniqueVendorProductMap[vendorProduct.Item] = vendorProduct
 	}
@@ -1211,12 +1188,12 @@ func getTaxSalesForceEntity(product models.Product, taxRates map[string]models.S
 	return taxRates[key]
 }
 
-func getProductChildrenAdAssortmentType(product models.Product) ([]ProductChild, string) {
-	var children []ProductChild
+func getProductChildrenAdAssortmentType(product models.Product) ([]models.ProductChild, string) {
+	var children []models.ProductChild
 	err := json.Unmarshal([]byte(product.Children.String), &children)
 	if err != nil {
 		fmt.Sprintf("Could not unmarshal children for product %+v: %+v", product, product)
-		return []ProductChild{}, "Standard"
+		return []models.ProductChild{}, "Standard"
 	}
 
 	if len(children) > 0 {
@@ -1224,7 +1201,7 @@ func getProductChildrenAdAssortmentType(product models.Product) ([]ProductChild,
 		return children, "Bundle"
 	}
 
-	return []ProductChild{}, "Standard"
+	return []models.ProductChild{}, "Standard"
 }
 
 func getTaxSalesForceEntityByName(taxRates map[string]models.SalesForceEntity, name string) (models.SalesForceEntity, error) {
@@ -1249,7 +1226,7 @@ func convertProductsToMap(products []models.Product) map[string]models.Product {
 	return result
 }
 
-func readSuppliers() ([]ProductSupplier, map[int]ProductSupplier) {
+func readSuppliers() ([]models.ProductSupplier, map[int]models.ProductSupplier) {
 	f, err := excelize.OpenFile("migration/Suppliers_store.xlsx")
 	if err != nil {
 		log.Fatal(err)
@@ -1260,8 +1237,8 @@ func readSuppliers() ([]ProductSupplier, map[int]ProductSupplier) {
 		log.Fatal(err)
 	}
 
-	var suppliers []ProductSupplier
-	suppliersMap := make(map[int]ProductSupplier)
+	var suppliers []models.ProductSupplier
+	suppliersMap := make(map[int]models.ProductSupplier)
 	for i, row := range rows {
 		if i == 0 {
 			continue
@@ -1270,7 +1247,7 @@ func readSuppliers() ([]ProductSupplier, map[int]ProductSupplier) {
 		if err != nil {
 			supplierId = 0
 		}
-		supplier := ProductSupplier{
+		supplier := models.ProductSupplier{
 			Item:         row[0],
 			SupplierId:   supplierId,
 			SupplierName: row[2],
