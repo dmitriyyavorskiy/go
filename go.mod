@@ -1,4 +1,4 @@
-module example/hello
+module github.com/oxxo-labs/go
 
 go 1.21.6
 

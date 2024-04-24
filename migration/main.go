@@ -1,13 +1,13 @@
 package main
 
 import (
-	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
+	"github.com/oxxo-labs/go/models"
 	"github.com/xuri/excelize/v2"
 	"log"
 	"os"
@@ -31,7 +31,7 @@ const (
 	integrationOfBtlr     = "005Hp00000igLP3IAM"
 )
 
-var brandsMap = make(map[string]Brand)
+var brandsMap = make(map[string]models.Brand)
 
 type ProductChild struct {
 	Sku      string
@@ -44,81 +44,9 @@ type ProductSupplier struct {
 	SupplierName string
 }
 
-type Store struct {
-	Name       string
-	Code       string
-	Id         string
-	Plaza      string
-	Address    string
-	PostalCode string
-	City       string
-	State      string
-	Latitude   string
-	Longitude  string
-	Surface    string
-	Area       string
-}
-
 type ProductSupplierKey struct {
 	Item       string
 	SupplierId int
-}
-
-type Brand struct {
-	ID    string         `db:"_id"`
-	Name  sql.NullString `db:"name"`
-	Image sql.NullString `db:"image"`
-}
-
-type Hub struct {
-	ID     string `db:"_id"`
-	Name   string `db:"name"`
-	Status string `db:"status"`
-	ZoneId string `db:"zone_id"`
-	Type   string `db:"type"`
-	Code   string `db:"cr"`
-}
-
-type SalesForceEntity struct {
-	ID              string
-	Name            string
-	ReferenceTypeId string
-}
-
-type SalesForceCategory struct {
-	ID                 string
-	Name               string
-	CategoryLevel1Name string
-	CategoryLevel2Name string
-}
-
-type SalesForceAccount struct {
-	ID              string
-	Name            string
-	BusinessName    string
-	InternalId      string
-	ReferenceTypeId string
-	Status          string
-}
-
-type SalesForceProduct struct {
-	ID   string
-	Name string
-	Sku  string
-}
-
-type CategoryTree struct {
-	ID           string         `db:"id"`
-	Name         sql.NullString `db:"name"`
-	Image        sql.NullString `db:"image"`
-	CategoryId   sql.NullString `db:"subcategory_id"`
-	CategoryName sql.NullString `db:"subcategory_name"`
-}
-
-type Tax struct {
-	Rate        int    `json:"rate"`
-	Type        string `json:"type"`
-	Withholding bool   `json:"withholding"`
 }
 
 type TaxRate struct {
@@ -126,39 +54,6 @@ type TaxRate struct {
 	Rate      string
 	Type      string
 	Secondary bool
-}
-
-type Product struct {
-	Sku              string         `db:"sku"`
-	Barcode          sql.NullString `db:"barcode"`
-	Name             string         `db:"name"`
-	ShortDescription string         `db:"short_description"`
-	Variant          string         `db:"variant"`
-	MinPrice         float32        `db:"min_price"`
-	MaxPrice         float32        `db:"max_price"`
-	MaxQuantity      int            `db:"max_quantity"`
-	Brand            sql.NullString `db:"brand_name"`
-	Categories       sql.NullString `db:"categories"`
-	CategoryName     sql.NullString `db:"category_name"`
-	SubcategoryName  sql.NullString `db:"subcategory_name"`
-	Image            sql.NullString `db:"image"`
-	Tags             sql.NullString `db:"tags"`
-	Taxes            sql.NullString `db:"taxes"`
-	Children         sql.NullString `db:"children"`
-	AgeRestriction   bool           `db:"age_restriction"`
-	Restricted       bool           `db:"restricted"`
-	Enabled          bool           `db:"is_enabled"`
-	Discount         sql.NullString `db:"discount"`
-	DiscountType     sql.NullString `db:"discount_type"`
-	DiscountTitle    sql.NullString `db:"discount_title"`
-}
-
-type Inventory struct {
-	Sku       string         `db:"sku"`
-	Store     string         `db:"store"`
-	Zone      sql.NullString `db:"zone"`
-	StoreCode string         `db:"cr"`
-	Price     float32        `db:"price_list"`
 }
 
 func main() {
@@ -368,9 +263,9 @@ func createDatabaseConnection() *sqlx.DB {
 	return db
 }
 
-func readBrands() []Brand {
+func readBrands() []models.Brand {
 	db := createDatabaseConnection()
-	var brands []Brand
+	var brands []models.Brand
 	err := db.Select(&brands, "SELECT _id, name, image FROM mgo.brands")
 	if err != nil {
 		log.Fatalf("Could not read brands: %v", err)
@@ -384,9 +279,9 @@ func readBrands() []Brand {
 	return brands
 }
 
-func readCategoryTrees() []CategoryTree {
+func readCategoryTrees() []models.CategoryTree {
 	db := createDatabaseConnection()
-	var categories []CategoryTree
+	var categories []models.CategoryTree
 	err := db.Select(&categories,
 		`select distinct c._id as id, c.name as name, s._id as subcategory_id, s.name as subcategory_name, c.image as image
 	from mgo.categories c
@@ -408,9 +303,9 @@ func readCategoryTrees() []CategoryTree {
 	return categories
 }
 
-func readProducts() []Product {
+func readProducts() []models.Product {
 	db := createDatabaseConnection()
-	var products []Product
+	var products []models.Product
 	err := db.Select(&products, `SELECT DISTINCT ON (p.sku) p.sku,
                            p.barcode,
                            p.name,
@@ -450,9 +345,9 @@ func readProducts() []Product {
 	return products
 }
 
-func readInventory() []Inventory {
+func readInventory() []models.Inventory {
 	db := createDatabaseConnection()
-	var inventories []Inventory
+	var inventories []models.Inventory
 	err := db.Select(&inventories, `select sku, store, zone, cr, price_list from mgo.products_inventory pi
 												LEFT JOIN mgo.products_inventory_stores pis on pi.store = pis._id 
 												WHERE cr is not null`)
@@ -463,9 +358,9 @@ func readInventory() []Inventory {
 	return inventories
 }
 
-func readHubs() []Hub {
+func readHubs() []models.Hub {
 	db := createDatabaseConnection()
-	var hubs []Hub
+	var hubs []models.Hub
 	err := db.Select(&hubs, `select _id,name,status,zone_id,cr,type from mgo.products_inventory_stores where cr is not null`)
 	if err != nil {
 		log.Fatalf("Could not read hubs: %v", err)
@@ -474,8 +369,8 @@ func readHubs() []Hub {
 	return hubs
 }
 
-func readBrand(db sqlx.DB, brandId string) Brand {
-	var brand []Brand
+func readBrand(db sqlx.DB, brandId string) models.Brand {
+	var brand []models.Brand
 	err := db.Select(&brand, "SELECT _id, name, image FROM mgo.brands where _id = $1", brandId)
 	if err != nil {
 		log.Fatalf("Could not read brand by id %s: %v", brandId, err)
@@ -483,14 +378,14 @@ func readBrand(db sqlx.DB, brandId string) Brand {
 	return brand[0]
 }
 
-func readSalesforceEntities(filename string, recordTypeId string) map[string]SalesForceEntity {
+func readSalesforceEntities(filename string, recordTypeId string) map[string]models.SalesForceEntity {
 	data := getDataFromFile(filename)
 
 	var nameColumn int
 	var idColumn int
 	var referenceTypeIColumn = -1
 
-	result := make(map[string]SalesForceEntity)
+	result := make(map[string]models.SalesForceEntity)
 
 	// Print the CSV data
 	for i, row := range data {
@@ -514,12 +409,12 @@ func readSalesforceEntities(filename string, recordTypeId string) map[string]Sal
 
 		} else {
 			if recordTypeId == "" {
-				result[row[nameColumn]] = SalesForceEntity{
+				result[row[nameColumn]] = models.SalesForceEntity{
 					ID:   row[idColumn],
 					Name: row[nameColumn],
 				}
 			} else if row[referenceTypeIColumn] == recordTypeId {
-				result[row[nameColumn]] = SalesForceEntity{
+				result[row[nameColumn]] = models.SalesForceEntity{
 					ID:              row[idColumn],
 					Name:            row[nameColumn],
 					ReferenceTypeId: row[referenceTypeIColumn],
@@ -530,7 +425,7 @@ func readSalesforceEntities(filename string, recordTypeId string) map[string]Sal
 	return result
 }
 
-func readSalesforceCategories(filename string) map[string]SalesForceCategory {
+func readSalesforceCategories(filename string) map[string]models.SalesForceCategory {
 	data := getDataFromFile(filename)
 
 	nameColumn := 2
@@ -538,7 +433,7 @@ func readSalesforceCategories(filename string) map[string]SalesForceCategory {
 	var categoryLevel1Column int
 	var categoryLevel2Column int
 
-	result := make(map[string]SalesForceCategory)
+	result := make(map[string]models.SalesForceCategory)
 
 	for i, row := range data {
 
@@ -559,7 +454,7 @@ func readSalesforceCategories(filename string) map[string]SalesForceCategory {
 			}
 
 		} else {
-			result[row[categoryLevel1Column]+":"+row[categoryLevel2Column]] = SalesForceCategory{
+			result[row[categoryLevel1Column]+":"+row[categoryLevel2Column]] = models.SalesForceCategory{
 				ID:                 row[idColumn],
 				Name:               row[nameColumn],
 				CategoryLevel1Name: row[categoryLevel1Column],
@@ -570,7 +465,7 @@ func readSalesforceCategories(filename string) map[string]SalesForceCategory {
 	return result
 }
 
-func readSalesforceAccounts(filename string, recordTypeId string, keyHeader string) map[string]SalesForceAccount {
+func readSalesforceAccounts(filename string, recordTypeId string, keyHeader string) map[string]models.SalesForceAccount {
 	data := getDataFromFile(filename)
 
 	var nameColumn int
@@ -580,7 +475,7 @@ func readSalesforceAccounts(filename string, recordTypeId string, keyHeader stri
 	var businessNameColumn int
 	var statusColumn int
 
-	result := make(map[string]SalesForceAccount)
+	result := make(map[string]models.SalesForceAccount)
 
 	for i, row := range data {
 
@@ -608,7 +503,7 @@ func readSalesforceAccounts(filename string, recordTypeId string, keyHeader stri
 
 		} else {
 			if row[referenceTypeColumn] == recordTypeId {
-				result[row[externalIdColumn]] = SalesForceAccount{
+				result[row[externalIdColumn]] = models.SalesForceAccount{
 					ID:              row[idColumn],
 					Name:            row[nameColumn],
 					InternalId:      row[externalIdColumn],
@@ -622,14 +517,14 @@ func readSalesforceAccounts(filename string, recordTypeId string, keyHeader stri
 	return result
 }
 
-func readSalesforceProducts(filename string) map[string]SalesForceProduct {
+func readSalesforceProducts(filename string) map[string]models.SalesForceProduct {
 	data := getDataFromFile(filename)
 
 	var nameColumn int
 	var idColumn int
 	var skuColumn int
 
-	result := make(map[string]SalesForceProduct)
+	result := make(map[string]models.SalesForceProduct)
 
 	for i, row := range data {
 		if i == 0 {
@@ -645,7 +540,7 @@ func readSalesforceProducts(filename string) map[string]SalesForceProduct {
 				}
 			}
 		} else {
-			result[row[skuColumn]] = SalesForceProduct{
+			result[row[skuColumn]] = models.SalesForceProduct{
 				ID:   row[idColumn],
 				Name: row[nameColumn],
 				Sku:  row[skuColumn],
@@ -711,7 +606,7 @@ func saveUtilityEntitiesToCsvFile(filename string) {
 	writer.Write(dataRow)
 }
 
-func saveBrandOwnersToCsvFile(filename string, brands []Brand) {
+func saveBrandOwnersToCsvFile(filename string, brands []models.Brand) {
 	file, err := os.Create(filename)
 	if err != nil {
 		log.Fatalf("Could not create file: %v", err)
@@ -734,7 +629,7 @@ func saveBrandOwnersToCsvFile(filename string, brands []Brand) {
 	}
 }
 
-func saveHubAccountsToCsvFile(filename string, hubs []Hub, stores map[string]Store) {
+func saveHubAccountsToCsvFile(filename string, hubs []models.Hub, stores map[string]models.Store) {
 	file, err := os.Create(filename)
 	if err != nil {
 		log.Fatalf("Could not create file: %v", err)
@@ -777,7 +672,7 @@ func saveHubAccountsToCsvFile(filename string, hubs []Hub, stores map[string]Sto
 	}
 }
 
-func updateHubAccountsToCsvFile(filename string, hubs map[string]SalesForceAccount, stores map[string]Store) {
+func updateHubAccountsToCsvFile(filename string, hubs map[string]models.SalesForceAccount, stores map[string]models.Store) {
 	file, err := os.Create(filename)
 	if err != nil {
 		log.Fatalf("Could not create file: %v", err)
@@ -812,7 +707,7 @@ func updateHubAccountsToCsvFile(filename string, hubs map[string]SalesForceAccou
 	}
 }
 
-func saveBrandsToCsvFile(filename string, brands []Brand, brandOwners map[string]SalesForceEntity) {
+func saveBrandsToCsvFile(filename string, brands []models.Brand, brandOwners map[string]models.SalesForceEntity) {
 
 	file, err := os.Create(filename)
 	if err != nil {
@@ -836,7 +731,7 @@ func saveBrandsToCsvFile(filename string, brands []Brand, brandOwners map[string
 	}
 }
 
-func saveCategoriesToCsvFile(filename string, categories []CategoryTree) {
+func saveCategoriesToCsvFile(filename string, categories []models.CategoryTree) {
 	file, err := os.Create(filename)
 	if err != nil {
 		log.Fatalf("Could not create file: %v", err)
@@ -902,7 +797,7 @@ func clearNameForExport(s string) string {
 	return strings.ReplaceAll(s, ",", " &")
 }
 
-func saveProductsToCsvFile(filename string, products []Product, taxRates map[string]SalesForceEntity, brands map[string]SalesForceEntity, categories map[string]SalesForceCategory) {
+func saveProductsToCsvFile(filename string, products []models.Product, taxRates map[string]models.SalesForceEntity, brands map[string]models.SalesForceEntity, categories map[string]models.SalesForceCategory) {
 
 	fmt.Printf("There are %d products\n", len(products))
 
@@ -1025,7 +920,7 @@ func saveVendorsToCsvFile(filename string, vendors map[int]ProductSupplier) {
 	}
 }
 
-func saveVendorProductsToCsvFile(filename string, productSuppliers []ProductSupplier, products []Product, salesForceVendors map[string]SalesForceAccount, salesForceProducts map[string]SalesForceProduct) {
+func saveVendorProductsToCsvFile(filename string, productSuppliers []ProductSupplier, products []models.Product, salesForceVendors map[string]models.SalesForceAccount, salesForceProducts map[string]models.SalesForceProduct) {
 	file, err := os.Create(filename)
 	if err != nil {
 		log.Fatalf("Could not create file: %v", err)
@@ -1045,7 +940,7 @@ func saveVendorProductsToCsvFile(filename string, productSuppliers []ProductSupp
 
 	i := 0
 	for _, vendorProduct := range productSuppliers {
-		if (salesForceProducts[vendorProduct.Item] == SalesForceProduct{}) {
+		if (salesForceProducts[vendorProduct.Item] == models.SalesForceProduct{}) {
 			fmt.Printf("Product not found %+v\n", vendorProduct)
 			continue
 		}
@@ -1073,7 +968,7 @@ func saveVendorProductsToCsvFile(filename string, productSuppliers []ProductSupp
 	fmt.Printf("There are %d/%d product salesForceVendors\n", i, len(productSuppliers))
 }
 
-func saveHubProductsToCsvFile(filename string, salesforceHubs map[string]SalesForceEntity, productSuppliers []ProductSupplier, inventory []Inventory, salesForceProducts map[string]SalesForceProduct, salesForceVendorProducts map[string]SalesForceEntity) {
+func saveHubProductsToCsvFile(filename string, salesforceHubs map[string]models.SalesForceEntity, productSuppliers []ProductSupplier, inventory []models.Inventory, salesForceProducts map[string]models.SalesForceProduct, salesForceVendorProducts map[string]models.SalesForceEntity) {
 	file, err := os.Create(filename)
 	if err != nil {
 		log.Fatalf("Could not create file: %v", err)
@@ -1092,7 +987,7 @@ func saveHubProductsToCsvFile(filename string, salesforceHubs map[string]SalesFo
 		uniqueVendorProductMap[vendorProduct.Item] = vendorProduct
 	}
 
-	hubSkuMap := make(map[string]Inventory)
+	hubSkuMap := make(map[string]models.Inventory)
 
 	i := 0
 	for _, inventory := range inventory {
@@ -1100,12 +995,12 @@ func saveHubProductsToCsvFile(filename string, salesforceHubs map[string]SalesFo
 		vendorProductName := fmt.Sprintf("%s - %d", inventory.Sku, uniqueVendorProductMap[inventory.Sku].SupplierId)
 		hubSku := fmt.Sprintf("%s - %s", inventory.StoreCode, inventory.Sku)
 
-		if (salesForceVendorProducts[vendorProductName] == SalesForceEntity{}) {
+		if (salesForceVendorProducts[vendorProductName] == models.SalesForceEntity{}) {
 			fmt.Printf("Vendor Product %s not found %+v\n", vendorProductName, inventory)
 			continue
 		}
 
-		if (hubSkuMap[hubSku] != Inventory{}) {
+		if (hubSkuMap[hubSku] != models.Inventory{}) {
 			fmt.Printf("Duplicated Hub Product %s not found %+v\n", hubSku, inventory)
 			continue
 		}
@@ -1127,7 +1022,7 @@ func saveHubProductsToCsvFile(filename string, salesforceHubs map[string]SalesFo
 	fmt.Printf("There are %d/%d hub products\n", i, len(inventory))
 }
 
-func saveHubsToCsvFile(filename string, hubs map[string]SalesForceAccount, stores map[string]Store) {
+func saveHubsToCsvFile(filename string, hubs map[string]models.SalesForceAccount, stores map[string]models.Store) {
 	file, err := os.Create(filename)
 	if err != nil {
 		log.Fatalf("Could not create file: %v", err)
@@ -1166,7 +1061,7 @@ func saveHubsToCsvFile(filename string, hubs map[string]SalesForceAccount, store
 	}
 }
 
-func updateHubToCsvFile(filename string, hubs map[string]SalesForceEntity, stores map[string]Store) {
+func updateHubToCsvFile(filename string, hubs map[string]models.SalesForceEntity, stores map[string]models.Store) {
 	file, err := os.Create(filename)
 	if err != nil {
 		log.Fatalf("Could not create file: %v", err)
@@ -1272,7 +1167,7 @@ func getFirstElement(input string) string {
 	return ""
 }
 
-func getDefaultTaxRateSalesForceEntity(product Product, taxRates map[string]SalesForceEntity) (SalesForceEntity, SalesForceEntity) {
+func getDefaultTaxRateSalesForceEntity(product models.Product, taxRates map[string]models.SalesForceEntity) (models.SalesForceEntity, models.SalesForceEntity) {
 	firstTaxRate := getTaxSalesForceEntity(product, taxRates, 0)
 	if strings.Contains(firstTaxRate.Name, "IEPS") {
 		defaultTaxRate, err := getTaxSalesForceEntityByName(taxRates, "IVA0")
@@ -1286,25 +1181,25 @@ func getDefaultTaxRateSalesForceEntity(product Product, taxRates map[string]Sale
 	//fmt.Printf("Default Tax rate set to  %+v and additional to %+v for product %+v \n", firstTaxRate.Name, additionalTaxRate.Name, product)
 
 	if firstTaxRate.Name == additionalTaxRate.Name {
-		additionalTaxRate = SalesForceEntity{}
+		additionalTaxRate = models.SalesForceEntity{}
 	}
 
 	if strings.HasPrefix(firstTaxRate.Name, "IVA0") && strings.HasPrefix(additionalTaxRate.Name, "IVA") {
-		return additionalTaxRate, SalesForceEntity{}
+		return additionalTaxRate, models.SalesForceEntity{}
 	}
 
 	return firstTaxRate, additionalTaxRate
 }
 
-func getTaxSalesForceEntity(product Product, taxRates map[string]SalesForceEntity, index int) SalesForceEntity {
-	var taxes []Tax
+func getTaxSalesForceEntity(product models.Product, taxRates map[string]models.SalesForceEntity, index int) models.SalesForceEntity {
+	var taxes []models.Tax
 	err := json.Unmarshal([]byte(product.Taxes.String), &taxes)
 	if err != nil {
 		fmt.Sprintf("Could not unmarshal taxes for product %+v: %+v", product.Taxes, product)
-		return SalesForceEntity{}
+		return models.SalesForceEntity{}
 	}
 	if (taxes == nil) || (len(taxes) <= index) {
-		return SalesForceEntity{}
+		return models.SalesForceEntity{}
 	}
 
 	if len(taxes) > 2 {
@@ -1316,7 +1211,7 @@ func getTaxSalesForceEntity(product Product, taxRates map[string]SalesForceEntit
 	return taxRates[key]
 }
 
-func getProductChildrenAdAssortmentType(product Product) ([]ProductChild, string) {
+func getProductChildrenAdAssortmentType(product models.Product) ([]ProductChild, string) {
 	var children []ProductChild
 	err := json.Unmarshal([]byte(product.Children.String), &children)
 	if err != nil {
@@ -1332,22 +1227,22 @@ func getProductChildrenAdAssortmentType(product Product) ([]ProductChild, string
 	return []ProductChild{}, "Standard"
 }
 
-func getTaxSalesForceEntityByName(taxRates map[string]SalesForceEntity, name string) (SalesForceEntity, error) {
+func getTaxSalesForceEntityByName(taxRates map[string]models.SalesForceEntity, name string) (models.SalesForceEntity, error) {
 	for _, taxRate := range taxRates {
 		if taxRate.Name == name {
 			return taxRate, nil
 		}
 	}
-	return SalesForceEntity{}, errors.New("ax rate with the given name not found")
+	return models.SalesForceEntity{}, errors.New("ax rate with the given name not found")
 }
 
-func getGlobalCategoryTree(product Product, categories map[string]SalesForceCategory) SalesForceCategory {
+func getGlobalCategoryTree(product models.Product, categories map[string]models.SalesForceCategory) models.SalesForceCategory {
 	cetegoryTree := categories[clearNameForExport(product.CategoryName.String)+":"+clearNameForExport(product.SubcategoryName.String)]
 	return cetegoryTree
 }
 
-func convertProductsToMap(products []Product) map[string]Product {
-	result := make(map[string]Product)
+func convertProductsToMap(products []models.Product) map[string]models.Product {
+	result := make(map[string]models.Product)
 	for _, product := range products {
 		result[product.Sku] = product
 	}
@@ -1391,7 +1286,7 @@ func readSuppliers() ([]ProductSupplier, map[int]ProductSupplier) {
 	return suppliers, suppliersMap
 }
 
-func readStores() ([]Store, map[string]Store) {
+func readStores() ([]models.Store, map[string]models.Store) {
 	f, err := excelize.OpenFile("migration/Stores.xlsx")
 	if err != nil {
 		log.Fatal(err)
@@ -1402,8 +1297,8 @@ func readStores() ([]Store, map[string]Store) {
 		log.Fatal(err)
 	}
 
-	var stores []Store
-	storesMap := make(map[string]Store)
+	var stores []models.Store
+	storesMap := make(map[string]models.Store)
 	for i, row := range rows {
 		if i <= 1 {
 			continue
@@ -1413,10 +1308,10 @@ func readStores() ([]Store, map[string]Store) {
 
 		fmt.Printf("Address is %s Size %d \n", address, len(address))
 
-		var store Store
+		var store models.Store
 
 		if len(address) > 4 {
-			store = Store{
+			store = models.Store{
 				Name:       row[0],
 				Code:       storeId,
 				Id:         row[2],
@@ -1431,7 +1326,7 @@ func readStores() ([]Store, map[string]Store) {
 				Area:       row[10],
 			}
 		} else {
-			store = Store{
+			store = models.Store{
 				Name:  row[0],
 				Code:  storeId,
 				Id:    row[2],
